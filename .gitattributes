@@ -1,0 +1,29 @@
+# Normalise line endings in the repository.
+#
+# Why: the working tree is Windows (CRLF via core.autocrlf) while a future
+# Jenkins/CI runner will be Linux (LF). Without normalisation, the same file
+# differs between contributors and every diff that touches line endings is
+# noise. Normalising to LF in the index keeps checkouts reproducible across
+# platforms. See decisions.md D-021.
+
+* text=auto eol=lf
+
+# Windows cannot represent LF for these; keep them as-is.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files: never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.whl binary
+*.safetensors binary
+*.bin binary
+*.pt binary
+*.pth binary
+*.ckpt binary

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "energy-intelligence"
+version = "0.1.0"
+description = "Adaptive, self-verifying energy intelligence system (Yuva Yodha Energy Tech Hackathon 2026, Schneider Electric)."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+authors = [{ name = "PrathamKapoor", email = "prathamkapoor027@gmail.com" }]
+
+# Runtime dependencies are intentionally EMPTY for Phase 1.
+# Phase 1 provides configuration, logging, testing and health-check
+# foundations only. No scientific/ML stack is committed until a later phase
+# actually requires it. See decisions.md -> D-004 and D-005.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+]
+
+[project.scripts]
+energy-intel = "energy_intelligence.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/energy_intelligence"]
+
+[tool.pytest.ini_options]
+minversion = "8.3"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config"
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["energy_intelligence"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

@@ -1,0 +1,72 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+
+# ---- Packaging / build ----
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- Test / coverage artifacts ----
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# ---- Type checkers / linters (configured in a later phase) ----
+.mypy_cache/
+.ruff_cache/
+
+# ---- uv ----
+.uv/
+
+# ---- Runtime outputs ----
+# Generated logs are run artifacts, not source. Reproduced by `energy-intel`.
+logs/*
+!logs/.gitkeep
+
+# Generated experiment/model artifacts are large binaries.
+# Only .gitkeep files are tracked so the directory conventions exist in git.
+artifacts/*
+!artifacts/.gitkeep
+models/*
+!models/.gitkeep
+experiments/*
+!experiments/.gitkeep
+
+# ---- Data ----
+# Phase 3 will define dataset naming rules. Raw/processed/external payloads are
+# never committed; only the directory conventions and their .gitkeep files.
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/external/*
+!data/external/.gitkeep
+
+# ---- OS / editor ----
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- Secrets ----
+# Never commit credentials. Phase 1 has no secrets, but the rule is recorded now.
+.env
+.env.*
+*.pem
+*.key

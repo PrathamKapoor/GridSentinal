@@ -1,0 +1,13 @@
+# Minimal valid configuration for tests and smoke runs.
+# Kept separate from default.toml so tests do not depend on production values.
+# Absolute paths are unnecessary: relative paths resolve against the project root.
+
+seed = 0
+device = "cpu"
+model_path = "models/test-model"
+dataset_path = "data/processed"
+experiment_name = "test-run"
+log_level = "DEBUG"
+output_dir = "artifacts"
+artifact_dir = "artifacts"
+log_dir = "logs"

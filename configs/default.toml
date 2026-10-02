@@ -1,0 +1,45 @@
+# Default configuration for the Energy Intelligence project.
+#
+# Resolution order (lowest priority first):
+#   1. this file
+#   2. the file passed via --config
+#   3. the file named by $ENERGY_INTEL_CONFIG
+#   4. CLI overrides (--seed, --log-level, --experiment-name)
+#
+# Unknown keys are REJECTED, so a typo fails fast instead of being ignored.
+# Relative paths are resolved against the project root.
+#
+# Nothing energy-domain specific is set here on purpose. The model
+# architecture, MoE expert count, optimizer, target energy system and dataset
+# are TBD until Phases 2-10 decide them. See decisions.md (D-006).
+
+# Seed for every stochastic component. Reproducibility depends on this.
+seed = 42
+
+# Compute device: one of "cpu", "cuda", "mps".
+# Phase 1 runs no compute, so this is configuration vocabulary only.
+device = "cpu"
+
+# Root of the foundation model to customise. TBD - Phase 6 targets
+# Qwen3-1.7B-Base; Phase 1 downloads nothing.
+model_path = "models/qwen3-1.7b-base"
+
+# Root of the dataset for this experiment. TBD - Phase 2 defines the energy
+# system and Phase 3 defines ingestion.
+dataset_path = "data/processed"
+
+# Slug identifying the run. Lowercase alphanumerics, '.', '_', '-'; max 64
+# characters. Used for log file and experiment directory names.
+experiment_name = "phase1-baseline"
+
+# One of DEBUG, INFO, WARNING, ERROR, CRITICAL.
+log_level = "INFO"
+
+# Run-scoped output directory.
+output_dir = "artifacts"
+
+# Machine-readable run outputs (metrics, tables, reports).
+artifact_dir = "artifacts"
+
+# JSON Lines logs.
+log_dir = "logs"

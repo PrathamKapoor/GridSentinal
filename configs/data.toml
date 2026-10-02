@@ -1,0 +1,44 @@
+# Dataset selection for Phase 3 ingestion.
+#
+# Third configuration file, alongside:
+#   configs/default.toml  a RUN        (seed, device, paths, logging)
+#   configs/domain.toml   the DOMAIN   (time base, system boundary)
+#   configs/data.toml     the DATASET  (this file)
+#
+# Kept separate so a machine can select external data without inheriting
+# settings it does not use. See decisions.md D-037 (run vs domain config) and
+# D-050 (dataset selection as a third, equally separate concern).
+#
+# Unknown keys are REJECTED (D-007).
+
+# The only adapter implemented. A future dataset gets its own adapter package.
+dataset = "SMART-DS"
+
+# Version directory, confirmed by SMART-DS_version.txt shipped inside each
+# scenario folder, whose entire contents are "1.0".
+version = "v1.0"
+
+# Year of the timeseries scenario.
+year = "2018"
+
+# Region and sub-region. AUS/P1U is the smallest urban sub-region, which keeps
+# the acquired subset tractable while still being real distribution data.
+region = "AUS"
+subregion = "P1U"
+
+# Scenario. base_timeseries has no PV or batteries; the solar/battery scenarios
+# carry them. Both are supported.
+scenario = "base_timeseries"
+
+# Sub-station and feeder folders under the scenario's opendss directory.
+substation = "p1uhs0_1247"
+feeder = "p1uhs0_1247--p1udt12703"
+
+# Local root the dataset was downloaded into. Raw data is git-ignored
+# (decisions.md D-016), so this path is local to each machine.
+raw_root = "data/raw/smart_ds"
+
+# Materialise only the published peak timepoint rather than whole-year series.
+# Whole-year series are ~35040 points per customer and are not needed to
+# validate the ingestion contract.
+peak_only = true

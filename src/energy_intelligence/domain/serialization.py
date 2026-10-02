@@ -73,8 +73,10 @@ __all__ = [
     "JSON_SEPARATORS",
 ]
 
-#: Bumped whenever the emitted shape changes.
-SCHEMA_VERSION = "2.0.0-phase2"
+#: Bumped whenever the emitted shape changes. 2.1.0 adds ``Battery.nameplate_energy``
+#: and allows ``usable_energy`` / ``min_soc`` / ``max_soc`` to be ``null`` (D-050).
+#: A 2.0.0 payload still decodes: every added read is nullable.
+SCHEMA_VERSION = "2.1.0-phase3"
 
 #: Compact and fully deterministic: no incidental whitespace, stable key order.
 JSON_SEPARATORS = (",", ":")
@@ -333,16 +335,21 @@ def _assets(payload: Any, context: str) -> tuple[Asset, ...]:
             result.append(
                 Battery(
                     asset_type=asset_type,
-                    usable_energy=_quantity(item["usable_energy"], f"{context}.usable_energy"),
-                    min_soc=item["min_soc"],
-                    max_soc=item["max_soc"],
+                    usable_energy=_optional_quantity(
+                        item.get("usable_energy"), f"{context}.usable_energy"
+                    ),
+                    min_soc=item.get("min_soc"),
+                    max_soc=item.get("max_soc"),
                     max_charge_power=_optional_quantity(
                         item.get("max_charge_power"), f"{context}.max_charge"
                     ),
                     max_discharge_power=_optional_quantity(
                         item.get("max_discharge_power"), f"{context}.max_discharge"
                     ),
-                    round_trip_efficiency=item["round_trip_efficiency"],
+                    round_trip_efficiency=item.get("round_trip_efficiency"),
+                    nameplate_energy=_optional_quantity(
+                        item.get("nameplate_energy"), f"{context}.nameplate_energy"
+                    ),
                     **common,
                 )
             )

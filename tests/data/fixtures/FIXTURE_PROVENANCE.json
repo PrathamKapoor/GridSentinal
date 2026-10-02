@@ -1,0 +1,25 @@
+{
+  "note": "Fixtures extracted mechanically from real SMART-DS v1.0 files.",
+  "source_root": "data\\raw\\smart_ds\\v1.0",
+  "feeder": "AUS/P1U 2018 base_timeseries p1uhs0_1247/p1uhs0_1247--p1udt12703",
+  "files": [
+    "loads_excerpt.dss (12 real Load directives)",
+    "loadshapes_excerpt.dss (4 real Loadshape directives)",
+    "master_excerpt.dss (real circuit definition)",
+    "lines_excerpt.dss (10 real Line directives plus the one incident to the Circuit source bus p1udt12703-p1uhs0_1247x, read from Master.dss)",
+    "buscoords_excerpt.dss (10 real coordinate rows)",
+    "storage_excerpt.dss (6 real Storage directives)",
+    "pvsystems_excerpt.dss (6 real PVSystem directives)",
+    "user_guide_excerpt.md (documentation excerpt)",
+    "summary_data.csv (complete, unmodified)",
+    "profile_res_kw_17316.csv (first 96 real values of 35040)",
+    "solar_excerpt.csv (header + 4 real rows)",
+    "placement_battery_customer_L.json (2 of 95 real keys)"
+  ],
+  "truncated": [
+    "profile_res_kw_17316.csv is a 96-value prefix; its maximum is not 1.0",
+    "placement_battery_customer_L.json keeps 2 of the real keys",
+    "loadshapes_excerpt.dss references profiles not shipped as fixtures; tests must stub the profile directory",
+    "lines_excerpt.dss keeps the first 10 real lines plus the line incident to the Circuit source bus, so the excerpt has a resolvable boundary"
+  ]
+}

@@ -1,0 +1,20 @@
+# User Guide for SMART-DS Synthetic Electrical Network Data
+## SMART-DS
+The SMART-DS datasets (Synthetic Models for Advanced, Realistic Testing: Distribution systems and Scenarios) are realistic large-scale U.S. electrical distribution models for testing advanced grid algorithms and technology analysis. This document provides a user guide for the datasets.
+- [User Guide for SMART-DS Synthetic Electrical Network Data](#User-Guide-for-SMART-DS-Synthetic-Electrical-Network-Data)
+  - [SMART-DS](#SMART-DS)
+  - [Dataset Features](#Dataset-Features)
+    - [Network](#Network)
+    - [Electrical Components](#Electrical-Components)
+    - [Design](#Design)
+    - [Loads](#Loads)
+    - [SMART-DS Scenarios](#SMART-DS-Scenarios)
+      - [Integrated Scenarios](#Integrated-Scenarios)
+      - [Placement Scenarios](#Placement-Scenarios)
+  - [Dataset Structure](#Dataset-Structure)
+    - [GIS](#GIS)
+    - [Placements](#Placements)
+    - [Years](#Years)
+    - [Datasets](#Datasets)
+      - [SAF](#SAF)
+      - [GSO](#GSO)

@@ -1,0 +1,4 @@
+New Loadshape.res_kw_17316_pu npts= 35040 interval=0.25 mult = (file=../../../../../profiles/res_kw_17316_pu.csv) qmult = (file=../../../../../profiles/res_kvar_17316_pu.csv)
+New Loadshape.res_kw_24550_pu npts= 35040 interval=0.25 mult = (file=../../../../../profiles/res_kw_24550_pu.csv) qmult = (file=../../../../../profiles/res_kvar_24550_pu.csv)
+New Loadshape.res_kw_16535_pu npts= 35040 interval=0.25 mult = (file=../../../../../profiles/res_kw_16535_pu.csv) qmult = (file=../../../../../profiles/res_kvar_16535_pu.csv)
+New Loadshape.res_kw_28547_pu npts= 35040 interval=0.25 mult = (file=../../../../../profiles/res_kw_28547_pu.csv) qmult = (file=../../../../../profiles/res_kvar_28547_pu.csv)

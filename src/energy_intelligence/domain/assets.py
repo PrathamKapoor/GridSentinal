@@ -12,8 +12,8 @@ Concrete classes per :class:`~energy_intelligence.domain.enums.AssetType`:
 :class:`Asset`         Infrastructure: grid connection, substation, load.
 :class:`SolarAsset`    Capacity, tilt, azimuth, inverter rating.
 :class:`WindAsset`     Rated power, cut-in/cut-out/rated speeds.
-:class:`Battery`       Usable energy, SOC bounds, charge/discharge limits,
-                       round-trip efficiency.
+:class:`Battery`       Nameplate and usable energy, SOC bounds,
+                       charge/discharge limits, round-trip efficiency.
 :class:`EVCharger`     Max power, minimum state of charge on return.
 :class:`FlexibleLoad`  Min/max power, shiftable energy, priority.
 ======================  ==================================================
@@ -221,41 +221,65 @@ class WindAsset(Asset):
 class Battery(Asset):
     """Battery energy storage.
 
+    **Nameplate capacity and usable capacity are different quantities.** A dataset
+    that states a nameplate rating (``kWhRated`` in OpenDSS) has *not* stated the
+    depth-of-discharge limit, so it has not stated usable energy. Conflating them
+    silently inflates flexibility, which is why ``usable_energy`` may be ``None``
+    while :attr:`nameplate_energy` carries what the source actually said (D-050).
+    The same reasoning applies to the state-of-charge window and to the separate
+    charge and discharge power limits: ``None`` means *not known*, never *zero*.
+
     Attributes:
-        usable_energy: Deliverable energy at the depth-of-discharge limit.
-        min_soc: Lowest permitted state of charge, as a fraction.
-        max_soc: Highest permitted state of charge, as a fraction.
-        max_charge_power: Maximum charge power.
-        max_discharge_power: Maximum discharge power.
+        usable_energy: Deliverable energy at the depth-of-discharge limit, or
+            ``None`` when the source states only a nameplate rating.
+        min_soc: Lowest permitted state of charge as a fraction, or ``None``.
+        max_soc: Highest permitted state of charge as a fraction, or ``None``.
+        max_charge_power: Maximum charge power, or ``None``.
+        max_discharge_power: Maximum discharge power, or ``None``.
         round_trip_efficiency: Fraction of stored energy recoverable, in
-            ``(0, 1]``.
+            ``(0, 1]``, or ``None`` when the source states no efficiency.
+        nameplate_energy: Nameplate energy capacity as stated by the source, e.g.
+            an OpenDSS ``kWhRated``. ``None`` when the source states no energy
+            rating at all.
     """
 
-    usable_energy: Quantity
-    min_soc: float
-    max_soc: float
+    usable_energy: Quantity | None
+    min_soc: float | None
+    max_soc: float | None
     max_charge_power: Quantity | None
     max_discharge_power: Quantity | None
-    round_trip_efficiency: float
+    round_trip_efficiency: float | None
+    nameplate_energy: Quantity | None = None
 
     def __post_init__(self) -> None:
         errors: list[str] = []
 
-        if not isinstance(self.usable_energy, Quantity):
-            errors.append(f"usable_energy must be a Quantity, got {type(self.usable_energy).__name__}")
-        elif self.usable_energy.value < 0:
-            errors.append(
-                f"usable_energy must be non-negative, got {self.usable_energy.value}"
-            )
+        for field_name in ("usable_energy", "nameplate_energy"):
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            if not isinstance(value, Quantity):
+                errors.append(
+                    f"{field_name} must be a Quantity or None, got {type(value).__name__}"
+                )
+            elif value.value < 0:
+                errors.append(f"{field_name} must be non-negative, got {value.value}")
 
         for field_name in ("min_soc", "max_soc"):
             value = getattr(self, field_name)
+            if value is None:
+                continue
             if isinstance(value, bool) or not isinstance(value, (int, float)):
-                errors.append(f"{field_name} must be a real number, got {value!r}")
+                errors.append(f"{field_name} must be a real number or None, got {value!r}")
             elif not 0.0 <= value <= 1.0:
                 errors.append(f"{field_name} must lie in [0, 1], got {value}")
 
-        if isinstance(self.min_soc, (int, float)) and isinstance(self.max_soc, (int, float)):
+        if (
+            isinstance(self.min_soc, (int, float))
+            and not isinstance(self.min_soc, bool)
+            and isinstance(self.max_soc, (int, float))
+            and not isinstance(self.max_soc, bool)
+        ):
             if self.min_soc > self.max_soc:
                 errors.append(
                     f"min_soc {self.min_soc} must not exceed max_soc {self.max_soc}"
@@ -263,12 +287,15 @@ class Battery(Asset):
 
         if (
             isinstance(self.round_trip_efficiency, bool)
-            or not isinstance(self.round_trip_efficiency, (int, float))
+            or (
+                self.round_trip_efficiency is not None
+                and not isinstance(self.round_trip_efficiency, (int, float))
+            )
         ):
             errors.append(
-                f"round_trip_efficiency must be a real number, got {self.round_trip_efficiency!r}"
+                f"round_trip_efficiency must be a real number or None, got {self.round_trip_efficiency!r}"
             )
-        elif not 0.0 < self.round_trip_efficiency <= 1.0:
+        elif self.round_trip_efficiency is not None and not 0.0 < self.round_trip_efficiency <= 1.0:
             errors.append(
                 "round_trip_efficiency must lie in (0, 1]; got "
                 f"{self.round_trip_efficiency}"
@@ -288,22 +315,40 @@ class Battery(Asset):
             raise DomainValidationError(errors, subject="Battery")
 
     @property
-    def usable_soc_window(self) -> tuple[float, float]:
-        """The usable state-of-charge window, as ``(min, max)``."""
+    def usable_soc_window(self) -> tuple[float, float] | None:
+        """The usable state-of-charge window, as ``(min, max)``.
+
+        ``None`` unless both bounds are known; a partially known window is not a
+        window and is not reported as one.
+        """
+        if self.min_soc is None or self.max_soc is None:
+            return None
         return (self.min_soc, self.max_soc)
+
+    @property
+    def capacity_known(self) -> bool:
+        """Whether usable energy is known.
+
+        ``False`` for a source that published only a nameplate rating, which is
+        the common case for OpenDSS ``Storage`` elements.
+        """
+        return self.usable_energy is not None
 
     @property
     def nameplate_duration_hours(self) -> float | None:
         """Usable energy divided by rated power: hours of rated discharge.
 
         ``None`` unless the energy and power units form a dimensionally
-        compatible pair. This is a dimensional consistency check, not a unit
-        conversion -- Phase 2 deliberately performs no conversion (D-039).
+        compatible pair **and** usable energy is known. This is a dimensional
+        consistency check, not a unit conversion -- Phase 2 deliberately performs
+        no conversion (D-039).
 
         Note that comparing the two ``unit`` values directly would always fail,
         because ``kWh`` is never equal to ``kW``; the pairing below is what makes
         the ratio meaningful.
         """
+        if self.usable_energy is None:
+            return None
         pair = (self.usable_energy.unit, self.rated_power.unit)
         if pair not in _DURATION_PAIRS or self.rated_power.value <= 0:
             return None

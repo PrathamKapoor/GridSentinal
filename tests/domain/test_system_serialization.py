@@ -504,14 +504,16 @@ def test_decoding_rejects_missing_required_fields() -> None:
     with pytest.raises(Exception):
         decode(json.dumps({"_schema_version": SCHEMA_VERSION, "node_id": "node-pcc"}))
 
-    # Battery requires usable_energy; the AssetId/keyError surfaces from _assets.
+    # Battery requires an identity and a name. usable_energy and
+    # round_trip_efficiency are deliberately NOT in this list: D-050 makes them
+    # nullable, because a source may state only a nameplate rating. Absent and
+    # explicit-null mean the same thing for those two, and both mean "unknown".
     with pytest.raises(Exception):
         decode(
             json.dumps(
                 {
                     "_schema_version": SCHEMA_VERSION,
                     "asset_type": "battery",
-                    "asset_id": "asset-b-1",
                     "name": "b",
                     "node_id": "node-pcc",
                     "authority": "dispatchable",
@@ -520,6 +522,41 @@ def test_decoding_rejects_missing_required_fields() -> None:
                 }
             )
         )
+
+
+def test_battery_round_trips_with_unknown_fields() -> None:
+    """A battery built from a nameplate-only source must survive a round trip.
+
+    This is the SMART-DS case: ``kWhRated`` present, usable energy, SOC window
+    and directional power limits absent (D-050).
+    """
+    battery = Battery(
+        asset_type=AssetType.BATTERY,
+        asset_id=AssetId("asset-bess-1"),
+        name="bess1",
+        node_id=NodeId("node-pcc"),
+        authority=AuthorityLevel.DISPATCHABLE,
+        rated_power=Quantity(8.0, Unit.KILOWATT),
+        availability=1.0,
+        metadata={"dispatch": "UNAVAILABLE"},
+        usable_energy=None,
+        nameplate_energy=Quantity(16.0, Unit.KILOWATT_HOURS),
+        min_soc=None,
+        max_soc=None,
+        max_charge_power=None,
+        max_discharge_power=None,
+        round_trip_efficiency=0.9025,
+    )
+
+    decoded = decode(encode(battery))
+
+    assert isinstance(decoded, Battery)
+    assert decoded.usable_energy is None
+    assert decoded.nameplate_energy == Quantity(16.0, Unit.KILOWATT_HOURS)
+    assert decoded.min_soc is None and decoded.max_soc is None
+    assert decoded.max_charge_power is None and decoded.max_discharge_power is None
+    assert decoded.round_trip_efficiency == pytest.approx(0.9025)
+    assert decoded.capacity_known is False
 
 
 def test_decoding_rejects_unknown_enum_member(battery: Battery) -> None:

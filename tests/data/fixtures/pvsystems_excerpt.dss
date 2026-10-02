@@ -1,0 +1,6 @@
+New PVSystem.pv_load_p1ulv4122 bus1=p1ulv4122.1.2 phases=1 kV=0.24 kVA=4.545454545454545 Pmpp=5.0 %Cutout=0.1 %Cutin=0.1 Model=1 pf=1.0 irradiance=1 yearly=AUS_30.4196_-97.8095_35_135
+New PVSystem.pv_load_p1ulv60663 bus1=p1ulv60663.1.2 phases=1 kV=0.24 kVA=4.545454545454545 Pmpp=5.0 %Cutout=0.1 %Cutin=0.1 Model=1 pf=1.0 irradiance=1 yearly=AUS_30.4196_-97.8095_25_90
+New PVSystem.pv_load_p1ulv2232 bus1=p1ulv2232.1.2 phases=1 kV=0.24 kVA=4.545454545454545 Pmpp=5.0 %Cutout=0.1 %Cutin=0.1 Model=1 pf=1.0 irradiance=1 yearly=AUS_30.4196_-97.8095_35_180
+New PVSystem.pv_load_p1ulv46551 bus1=p1ulv46551.1.2 phases=1 kV=0.24 kVA=4.545454545454545 Pmpp=5.0 %Cutout=0.1 %Cutin=0.1 Model=1 pf=1.0 irradiance=1 yearly=AUS_30.4196_-97.8095_25_270
+New PVSystem.pv_load_p1ulv18591 bus1=p1ulv18591.1.2 phases=1 kV=0.24 kVA=4.545454545454545 Pmpp=5.0 %Cutout=0.1 %Cutin=0.1 Model=1 pf=1.0 irradiance=1 yearly=AUS_30.4196_-97.8095_25_135
+New PVSystem.pv_load_p1ulv18583 bus1=p1ulv18583.1.2 phases=1 kV=0.24 kVA=4.545454545454545 Pmpp=5.0 %Cutout=0.1 %Cutin=0.1 Model=1 pf=1.0 irradiance=1 yearly=AUS_30.4196_-97.8095_35_180

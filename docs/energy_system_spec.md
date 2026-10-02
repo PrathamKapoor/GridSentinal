@@ -137,9 +137,20 @@ declares `tilt_degrees` and `azimuth_degrees`; a wind asset declares
 `battery_available_energy` is **DERIVED** from `usable_energy` and the SOC floor.
 A battery may not charge and discharge simultaneously — enforced at construction.
 
-Static battery parameters, all required: `usable_energy` (kWh), `min_soc`,
-`max_soc` (with `min_soc ≤ max_soc`), `max_charge_power`, `max_discharge_power`
-(kW), `round_trip_efficiency` in (0, 1].
+Static battery parameters, all of which **must be supplied explicitly but may be
+`None` when the source does not state them** (D-050): `usable_energy` (kWh),
+`nameplate_energy` (kWh), `min_soc`, `max_soc` (with `min_soc ≤ max_soc`),
+`max_charge_power`, `max_discharge_power` (kW), and `round_trip_efficiency` in
+(0, 1].
+
+> **Amended in Phase 3 (D-050).** These were originally all required non-null
+> fields, and the Phase 3 ingestion mapped SMART-DS `kWhRated` into
+> `usable_energy` and one `kWRated` into *both* directional limits. A nameplate
+> rating is not a depth-of-discharge limit, and a single rating is not a
+> directional split, so both mappings were inventions. `None` means *not known*;
+> it never means zero. A phase that needs usable capacity or a SOC window must
+> obtain it from a source that states it, or record a decision for its own
+> assumption.
 
 ### 2.4 EV and flexible resources
 

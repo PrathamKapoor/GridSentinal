@@ -45,6 +45,10 @@ models/*
 !models/.gitkeep
 experiments/*
 !experiments/.gitkeep
+# The cross-experiment registry is small, textual, and the only way to compare runs
+# across machines. Per-run directories stay ignored because they are regenerable
+# from the configuration (decisions.md D-070).
+!experiments/registry.jsonl
 
 # ---- Data ----
 # Phase 3 will define dataset naming rules. Raw/processed/external payloads are

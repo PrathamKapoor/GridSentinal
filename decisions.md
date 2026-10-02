@@ -1135,3 +1135,769 @@ implementation bug had to be caught by a test — the first version compared
 equal to `kW`), making the property dead code.
 
 **Status:** Accepted
+
+---
+
+# Phase 3 — SMART-DS ingestion, normalization and reality validation (D-040 … D-048)
+
+Phase 2 defined the domain contract as a hypothesis. Phase 3 tested that
+hypothesis against real data and recorded what broke.
+
+## Source-research findings driving these decisions
+
+Everything below was established by querying the authoritative source and
+reading the real files. Nothing is taken on trust.
+
+| Finding | Evidence |
+|---|---|
+| SMART-DS v1.0 is on the OEDI data lake as a **public, unauthenticated S3 bucket** | `https://oedi-data-lake.s3.amazonaws.com/?list-type=2&prefix=SMART-DS/` lists `v0.9/` and `v1.0/` |
+| Version is **1.0** | `SMART-DS_version.txt` inside a scenario folder contains exactly `1.0` |
+| **Native resolution is 15 minutes**, matching the Phase 2 grid exactly | Confirmed three ways: `Master.dss` `Solve mode=yearly stepsize=15m number=35040`; `LoadShapes` `npts=35040 interval=0.25`; profile files hold exactly 35040 values |
+| Load power is `kW(t) = rating x profile_pu(t)`, profiles being **per-unit** | User Guide rule, then verified: residential reconstructed 12380.5126 kW vs 12380.5126 kW published, **error 0.0000 kW** |
+| Centre-tap loads must be **summed**, not de-duplicated | Dedup gave -39.3%; summing gave -0.14%. All 1819 pairs carry identical kW |
+| Battery dispatch **does not exist and is underivable** | 93/93 Storage objects have `State=IDLING`, one `kWhStored` scalar, no SOC series, no storage loadshape |
+| EV exists as **placements only** | User Guide says "charging locations"; no EV timeseries folder exists |
+| **No wind** at all | No wind folder; `metrics.csv` has PV and Battery columns only |
+| Feeder losses are **3.2175 %** | `Summary_data.csv`: 501.672 kW losses at 15090.718 kW customer power |
+| `Buscoords.dss` is **not** a `.dss` directive file | Its content is bare `<bus> <lon> <lat>` lines; the generic parser yields **zero** elements |
+| Percent-prefixed parameters exist | `%Cutout`, `%Cutin`, `%EffCharge`, `%EffDischarge` on every PVSystem and Storage |
+
+## D-040 — Acquire from the authoritative OEDI bucket, not a mirror
+
+**Choices:** Kaggle or community mirror / an archived subset / **the OEDI S3
+bucket over plain HTTPS**.
+
+**Selected:** `https://oedi-data-lake.s3.amazonaws.com/SMART-DS/v1.0/`, fetched
+with plain HTTPS GET and the S3 `list-type=2` API.
+
+**Rationale:** the source is public and unauthenticated, so a mirror adds no
+convenience and introduces an untrustworthy provenance chain. No S3 client
+library was installed, preserving D-004.
+
+**Consequence:** acquisition needs no credentials, so the manifest has **no
+secrets to record** (asserted by a test). Licence is recorded as `UNKNOWN`
+because the User Guide does not state it, and must be resolved before
+publication (G-11).
+
+**Status:** Accepted
+
+---
+
+## D-041 — Mirror the authoritative layout under `data/raw/smart_ds`
+
+**Choices:** flatten the acquired files / store them in an archive /
+**mirror the bucket layout at the same relative paths**.
+
+**Selected:** `data/raw/smart_ds/v1.0/2018/AUS/P1U/...`, mirroring the bucket.
+
+**Rationale:** a provenance locator that reads like the authoritative path is
+auditable against the source without a lookup table, and an unchanged upstream
+layout means a future file can be dropped in without touching the adapter.
+
+**Consequence:** raw data stays git-ignored (D-016); 228.5 MiB is never
+committed. Re-fetching plus digest verification is the reproducibility contract.
+
+**Status:** Accepted
+
+---
+
+## D-042 — A checksummed manifest, with acquisition time isolated
+
+**Choices:** record nothing / record everything including wall-clock time /
+**a manifest whose content digest excludes acquisition time**.
+
+**Selected:** `DatasetManifest` recording S3 key, size and a **computed** SHA-256
+per file, with `acquisition.acquired_at` isolated in `AcquisitionMetadata`.
+
+**Rationale:** reproducibility needs "which bytes produced this result", but two
+acquisitions of identical bytes must compare equal. Separating the one
+nondeterministic field makes `manifest.digest()` a pure function of the content.
+
+**Consequence:** a test asserts the digest is unchanged when only
+`acquired_at` differs. No checksum is *claimed* unless calculated or published.
+
+**Status:** Accepted
+
+---
+
+## D-043 — Verify the derivation empirically, not from documentation
+
+**Context:** the User Guide's centre-tap wording is easy to misread, and the
+suggested "multiply by 0.5" applies to driving an OpenDSS solve, not to
+reconstructing customer demand.
+
+**Choices:** follow the documentation literally / follow the parenthetical "half
+of the total" wording / **test both readings against the dataset's own published
+figures and adopt whichever reproduces them**.
+
+**Selected:** sum both members of each `_1`/`_2` pair. Dedup was 39.3 % low;
+summing matched residential to eight decimal places.
+
+**Rationale:** the dataset publishes its own peak-time customer power, giving an
+independent oracle. Where documentation and data disagree, the data decides.
+
+**Consequence:** the mapping record cites the numeric evidence rather than the
+prose, and `test_centre_tap_mapping_records_the_empirical_evidence` fails if
+that evidence is removed.
+
+**Status:** Accepted
+
+---
+
+## D-044 — No resampling: the native grid already matches the domain
+
+**Choices:** resample 15 min to 15 min anyway / resample to hourly and
+re-derive / **use the native grid unchanged**.
+
+**Selected:** native 15-minute, 35,040-point grid used directly. No resampling.
+
+**Rationale:** confirmed three independent ways. Phase 2 chose 15 minutes
+*because* battery, EV and PV ramp are not meaningfully schedulable at hourly
+resolution (D-024); SMART-DS happens to be 15-minute native, so the two align
+and no information is lost.
+
+**Consequence:** `TimeAxis.matches_domain_grid` is True and is asserted.
+Resampling rules for a future coarser or irregular dataset belong to whichever
+phase first needs them; Phase 3 defines none because none is justified.
+
+**Status:** Accepted
+
+---
+
+## D-045 — Timestamps: anchor the synthetic clock to UTC, explicitly
+
+**Context:** SMART-DS carries **no timezone** — no offset, no local time, no
+daylight-saving handling. Phase 2 rejects naive datetimes. Both requirements
+cannot be satisfied without a choice.
+
+**Choices:** store naive timestamps (violates the domain) / invent a local
+timezone (would be wrong and unverifiable) / **anchor to
+`<year>-01-01T00:00:00+00:00` and treat as UTC, recording the assumption**.
+
+**Selected:** the third, with `TIMEZONE_ASSUMPTION` exported, embedded in the
+time-axis description and on every provenance chain.
+
+**Rationale:** the dataset is internally consistent on one synthetic clock, so
+anchoring it anywhere preserves every **relative** time relationship — which is
+what forecasting, flexibility and balance validation depend on.
+
+**Consequence:** true local wall-clock time is **not** preserved (Austin is
+CST/CDT). Recorded as G-09. Any future claim about local solar noon or tariff
+windows is valid only up to that fixed offset.
+
+**Status:** Accepted
+
+---
+
+## D-046 — Battery dispatch is UNAVAILABLE, and no `StorageState` is built
+
+**Context:** Phase 2's handoff stated dispatch "may need to be derived from state
+of charge". The Phase 3 brief required verifying that claim rather than
+assuming it.
+
+**Choices:** derive dispatch from a chosen SOC trajectory (fabrication) / run
+OpenDSS with a storage control strategy (produces *our* dispatch, not the
+dataset's) / **report UNAVAILABLE and construct no `StorageState`**.
+
+**Selected:** the third.
+
+**Rationale:** verification showed the suggested route is itself unavailable —
+deriving power needs SOC(t) and SOC(t+1), and SMART-DS supplies a *single*
+`kWhStored` scalar. There is nothing to difference. Producing any dispatch series
+would have meant inventing it, which rules A, C and D all forbid.
+
+**Consequence:** battery *ratings* are mapped (`DIRECT`), but
+`storage.charge_power_kw`/`discharge_power_kw`/`state_of_charge` series are
+`UNKNOWN`. Recorded as G-01, and the Phase 2 handoff statement is corrected.
+Battery flexibility must come from capacity (Phase 9) and from explicitly
+`SIMULATED` augmentation if desired.
+
+**Status:** Accepted
+
+---
+
+## D-047 — Report the 0.5 kW failure; do not adjust the tolerance
+
+**Context:** Phase 2 set a 0.5 kW per-node target (D-031). Real data does not meet
+it.
+
+**Choices:** widen the tolerance to pass / drop failing nodes / smooth the data /
+**report the failure with its cause**.
+
+**Selected:** the fourth. `TOLERANCE_KW` is a module constant with no setter, and
+a test asserts it equals 0.5.
+
+**Rationale:** the failure is informative. Two distinct causes were identified
+with evidence:
+
+1. **Real distribution losses** (501.67 kW, 3.2175 %) that Phase 2 deferred
+   physics for (D-023). A physics gap, not an ingestion error.
+2. **An unexplained 20.45 kW commercial reconstruction shortfall**, cause
+   `UNKNOWN`, recorded as G-07.
+
+Residential demand matches the published value exactly, which isolates the
+problem to the commercial subset.
+
+**Consequence:** the balance report distinguishes *reconstruction fidelity*
+(our ingestion) from *physical closure* (the network's losses), because conflating
+them would hide which one is failing. Per-node balance over time is reported as
+`NOT EVALUATED` with the reason, since grid flow is absent (G-02). `energy-intel
+data validate` exits non-zero on failure, which is a legitimate reportable
+outcome, not a crash.
+
+**Status:** Accepted
+
+---
+
+## D-048 — Fixtures extracted mechanically from real files
+
+**Context:** the brief forbids requiring the full dataset for unit tests, and
+forbids fictitious schemas.
+
+**Choices:** hand-write miniature SMART-DS files / use the full dataset for
+every test / **extract verbatim excerpts with a script and document each
+truncation**.
+
+**Selected:** `scripts/extract_fixtures.py` cuts real excerpts into
+`tests/data/fixtures/`, writing `FIXTURE_PROVENANCE.json` that names every file
+and every truncation.
+
+**Rationale:** a hand-written fixture is a guess at SMART-DS's format, and a
+guess is exactly what Phase 3 exists to eliminate. Two fixtures are truncated and
+say so: the profile fixture is a genuine 96-value prefix (so its maximum is
+**not** 1.0, and a test asserts it is not normalised rather than pretending), and
+the placement JSON keeps 2 of 95 real keys.
+
+**Consequence:** unit tests run on a clean checkout with no dataset;
+integration tests use the full dataset and skip when it is absent
+(`real_dataset_available`). Truncations are documented rather than hidden.
+
+**Status:** Accepted
+
+---
+
+## D-049 — Parser bug found by real data: percent-prefixed parameters
+
+**Context:** OpenDSS uses percent-prefixed parameter names (`%Cutout`,
+`%Cutin`, `%EffCharge`, `%EffDischarge`). The first parser pattern required a key
+to start with a letter or underscore.
+
+**Consequence:** every one of the 1,216 `PVSystem` and 93 `Storage` objects had
+its `Pmpp`, `kWhStored` and efficiency values silently corrupted by swallowing
+the following parameters into the previous value — for example
+`Pmpp` = `'5.0 %Cutout=0.1 %Cutin=0.1'`. The failure was silent: the value was a
+string that happened to parse as far as the caller.
+
+Fixed by allowing an optional leading `%`. Regression-tested by
+`test_actual_full_scenario_asset_counts`, which asserts `%EffCharge` is `95.0` on
+real files.
+
+**This is the clearest argument in the project for testing against real data
+rather than hand-written fixtures**: the fixture excerpt would have had to
+contain the bug for a unit test to catch it.
+
+**Status:** Accepted (fixed)
+
+---
+
+## D-050 - Unknown is representable: nameplate is not usable capacity
+
+**Context:** Phase 2's `Battery` required `usable_energy`, `min_soc`, `max_soc`
+and `round_trip_efficiency`, and treated `kWhRated` as `usable_energy` when
+mapping SMART-DS. Those are different quantities. A nameplate rating is what the
+manufacturer fitted; usable energy additionally needs a depth-of-discharge limit,
+which SMART-DS never states. Mapping one to the other inflates flexibility, and
+mapping a single `kWRated` to *both* `max_charge_power` and `max_discharge_power`
+invents a directional split the dataset does not contain.
+
+**Alternatives:**
+
+1. Keep the required fields and fill them with plausible values - rejected. This
+   is the invention the Phase 3 brief forbids, and it is invisible downstream.
+2. Omit batteries from the domain object - rejected. The batteries exist; dropping
+   93 real assets loses information the dataset genuinely provides.
+3. Widen the domain so a quantity the source does not state can be `None`.
+
+**Decision:** option 3. `usable_energy`, `min_soc`, `max_soc` and
+`round_trip_efficiency` may be `None`, meaning *not known*; a new
+`nameplate_energy` carries what the source actually stated. `None` never means
+zero. `capacity_known` and `usable_soc_window` report the difference rather than
+letting a caller infer it from a bare `None`.
+
+The fields keep their position and arity, so every Phase 2 call site and test is
+unaffected, and `SCHEMA_VERSION` moves `2.0.0-phase2 -> 2.1.0-phase3` because the
+emitted shape changed. A 2.0.0 payload still decodes.
+
+**Consequence:** Phase 9 must obtain usable capacity from another source, or
+declare an assumption with a decision of its own. Until then no battery
+flexibility can be computed, which is now visible in the data rather than hidden
+inside a plausible number.
+
+**Status:** Accepted
+
+---
+
+## D-051 - The point of common coupling is read, never guessed
+
+**Context:** `NetworkTopology` requires exactly one grid-connection node. The
+first implementation derived it from the feeder *folder name*
+(`p1uhs0_1247--p1udt12703` -> `p1udt12703`) and, when that bus was not in the
+discovered graph, fell back to marking the lexicographically first node as the
+PCC.
+
+Both are wrong. `Master.dss` declares the source bus directly:
+`New Circuit.feeder_p1udt12703-p1uhs0_1247x bus1=p1udt12703-p1uhs0_1247x`. A
+folder name is a label; a bus that happens to sort first is not a point of common
+coupling.
+
+**Decision:** read `Circuit.bus1`. If it is absent, or absent from the discovered
+graph, raise `UnresolvedBoundaryError` instead of constructing a system. A
+boundary the data does not state cannot be represented honestly, and failing loudly
+beats a plausible-looking wrong answer.
+
+The fixture extraction now appends the real line incident to that source bus, so
+the truncated excerpt has a resolvable boundary and the mapper's success path is
+testable without the 228 MiB dataset.
+
+**Consequence:** one honest failure mode instead of one silent wrong answer. A
+future feeder whose `Master.dss` lacks `bus1` will fail loudly at ingestion, which
+is the correct place to find that out.
+
+**Status:** Accepted
+
+---
+
+## D-052 - Customers are mapped individually, not aggregated
+
+**Context:** the first mapper created a single `FlexibleLoad` asset with
+`asset_type=LOAD` and the summed rated power of all 1,871 customers. That discards
+per-customer ratings and connection buses, and it declared flexibility fields
+(`min_power`, `max_power`, `shiftable_energy`, `priority`, `is_hvac`) that
+SMART-DS never states. It also used the wrong class: `AssetType.LOAD` is
+implemented by the base `Asset`, so a `FlexibleLoad` carrying `asset_type=LOAD`
+would not have survived a serialization round trip.
+
+**Decision:** one `Asset` per customer, attached to its own connection bus, with
+its members and centre-tap status in metadata and an explicit
+`flexibility: NOT STATED` note. Because the base `Asset` carries no flexibility
+fields, none is asserted.
+
+**Consequence:** 1,871 load assets instead of 1, so `energy_system.json` grows and
+the asset catalogue no longer collapses the network's load structure. Phase 9 and
+Phase 10 get the granularity they need without re-deriving it from the raw files.
+
+**Status:** Accepted
+
+---
+
+## D-053 - Every discovered element bus becomes a node
+
+**Context:** `adapter.topology()` collected buses from `Lines.dss` and `Loads.dss`
+only. A `Storage` or `PVSystem` on a bus with no incident line therefore produced
+an asset referencing a node the topology never declared, which `EnergySystem`
+rejects at construction. It surfaced as a test failure with a *different scenario's*
+`Storage.dss`, which is exactly the case the real PV and battery scenarios
+reproduce.
+
+**Decision:** collect `bus1` from every discovered element - loads, PV systems and
+storage - so the graph covers every asset point.
+
+**Consequence:** node counts can exceed line endpoints, which is correct: a device
+behind a service transformer is still a point in the network. Line-element count
+stays the measure of graph edges.
+
+**Status:** Accepted
+
+---
+
+## D-054 - Ingestion evidence, not ingestion convenience
+
+**Context:** Phase 3 delivered a manifest, a mapping table, a quality report, a
+balance report and an instantiated `EnergySystem`, all reproducible from
+`data/raw/smart_ds`. None of that is load-bearing on its own: without a recorded
+provenance chain, a later phase cannot tell which bytes produced a number.
+
+**Decision:** provenance is emitted, not implied. Every mapped object carries a
+`SourceReference` to the real SMART-DS path plus a `ProcessingStep` naming the
+transform. The reconstructed demand is emitted as an `ObservationRecord` with
+`VariableRole.DERIVED`, its real timestamp and its quality flags; the dataset's own
+published figure is emitted separately as `VariableRole.OBSERVATION`. Manifest
+remote keys carry the full `SMART-DS/<version>/` prefix and the recorded source is
+the authoritative URL, because a locator that cannot be fetched is not a locator.
+
+**Consequence:** `MappingReport` grew an `unknown_fields` list naming domain fields
+the source does not state, and `DomainMappingResult` now carries the observations.
+A reader of `artifacts/data/` can reconstruct which claims are measured, which are
+derived, and which are absent.
+
+**Status:** Accepted
+
+---
+
+## D-055 - Phase 4 adds exactly three runtime dependencies
+
+**Context:** D-004 and D-005 committed to a standard-library-only project, and a
+Phase 1 test enforced `dependencies == []`. Phase 4 is the first phase that
+genuinely needs a numerical stack, so the commitment has to be revisited rather
+than quietly broken.
+
+**Alternatives:**
+
+1. Keep zero dependencies and implement arrays, a linear solver, tree boosting and
+   gradient descent by hand. Rejected: reimplementing a gradient-boosted tree is
+   months of work and would be less trustworthy than a maintained one.
+2. Add a full data-science stack. Rejected: pandas, matplotlib and joblib would be
+   added "just in case". The whole dataset here is a numeric matrix, so pandas buys
+   nothing, and no figure is produced by this phase.
+3. Add the smallest set that covers what is actually used.
+
+**Decision:** option 3 - `numpy`, `scikit-learn`, `torch` (CPU build only). The
+Phase 1 test is **kept and tightened** rather than deleted: it now asserts the exact
+set, and two new tests assert that pandas is never imported and that
+`energy_intelligence.domain` imports no ML library at all, so the Phase 2 contract
+stays a dependency-free vocabulary.
+
+The CPU index is declared explicitly in `pyproject.toml` (`pytorch-cpu`). The
+default Windows wheel bundles CUDA and is several hundred megabytes; a hackathon
+prototype on CPU does not need it, and the smaller wheel installed in 53 s.
+
+**Consequence:** `uv sync` now pulls ~250 MB of wheels. The Phase 2 guarantee that
+the domain layer is framework-free is now actively tested rather than merely
+intended.
+
+**Status:** Accepted
+
+---
+
+## D-056 - Baselines are evaluated, not tuned
+
+**Context:** it is possible to make a baseline look good by searching
+hyperparameters until it wins, at which point it is no longer a baseline and the
+comparison with a future Energy-MoE becomes meaningless.
+
+**Decision:** hyperparameters are fixed at stated defaults, declared in the model
+module so the registry records them, and recorded verbatim in
+`experiments/registry.jsonl`. Ridge uses scikit-learn's own `alpha=1.0`. Gradient
+boosting uses `max_iter=200`, `early_stopping=False` - disabled deliberately, so
+training duration is deterministic and does not depend on the split. The neural MLP
+uses two small hidden layers, 40 epochs, L1 loss.
+
+**Consequence:** the neural baseline's failure at the 24-hour horizon (below) is
+reported as measured. Tuning it would have produced a better number and a worse
+experiment.
+
+**Status:** Accepted
+
+---
+
+## D-057 - The adapter gains a customer filter; the feeder total is accumulated per profile
+
+**Context:** Phase 4 needs whole-year series for a declared subset of customers.
+`SmartDsAdapter.loads()` had no way to select them, and Phase 4 must not
+re-implement SMART-DS semantics - that is exactly what Phase 3 established.
+
+**Decision (two parts):**
+
+1. `loads()` gains an optional `names` filter. It selects customers and changes no
+   arithmetic, so the derivation remains single-sourced.
+2. The feeder total is accumulated **per profile** rather than per customer: 341
+   profile files, each weighted by the summed kW of every Load object that uses it.
+   Materialising 1,871 whole-year series costs about 525 MB of tuples; the profile
+   accumulation costs about 50 MB and takes the same time.
+
+**The evidence that part 2 is correct:** at the published peak (grid index 19553)
+the accumulated feeder series equals **15070.267606731577 kW**, while Phase 3's
+per-customer sum gives **15070.267606731582 kW** - agreement to 5e-12 kW. The test
+`test_feeder_extraction_matches_the_phase3_reconstruction` asserts this, so a future
+divergence between the two paths is a test failure rather than a quiet divergence.
+
+**Consequence:** cross-phase consistency is now machine-checked.
+
+**Status:** Accepted
+
+---
+
+## D-058 - Target selection: three tasks, four refusals
+
+**Context:** the phase brief listed load, solar, wind, net demand, battery state
+and EV demand as candidates. Only three are real in SMART-DS.
+
+**Decision:** `ml/targets.py` declares every candidate with the fields the brief
+requires (source, unit, resolution, coverage, missingness, granularity,
+feasibility, status, evidence) and the runner **refuses** an `UNSUPPORTED` target by
+name, with the evidence, rather than producing an empty dataset.
+
+| Target | Status | Basis |
+|---|---|---|
+| `customer_load` | SUPPORTED | 1,871 customers x 35,040 points, no missing values |
+| `feeder_load` | SUPPORTED | sum over all 3,690 Load objects |
+| `pv_generation` | PARTIALLY_SUPPORTED | one shipped 1000 kW array; **not** the feeder PV fleet (G-03) |
+| `net_load` | UNSUPPORTED | needs feeder PV, whose irradiance shapes are absent |
+| `battery_soc`, `battery_power` | UNSUPPORTED | no SOC(t) exists at all (G-01) |
+| `ev_demand` | UNSUPPORTED | 2,991 adoption sites, no charging series (G-04) |
+| `wind_generation` | UNSUPPORTED | SMART-DS v1.0 has no wind asset (G-05) |
+
+`pv_generation` is `PARTIALLY_SUPPORTED` rather than `SUPPORTED` because honesty
+demands the distinction: it is one real array at one real location, while the 1,216
+feeder PV systems reference 20 irradiance loadshapes
+(`AUS_30.4196_-97.8095_<tilt>_<azimuth>`) that **are not present anywhere in the
+dataset**, and the one `solar_data` file that is present is a different location
+(30.3459 N). Feeder PV output remains underivable (G-03).
+
+**Consequence:** three forecasting tasks, on three declared targets, with four
+absences recorded rather than filled.
+
+**Status:** Accepted
+
+---
+
+## D-059 - The experiment shape is a fourth configuration file
+
+**Context:** `configs/default.toml` describes a run, `configs/domain.toml` the
+environment, `configs/data.toml` the dataset. Phase 4 needed a fourth thing: which
+target, lookback, horizons, split and baselines.
+
+**Decision:** `configs/ml.toml`, following D-037's separation. The dataset selection
+is a fact about what was downloaded; the lookback and horizon are choices about a
+question. They change for different reasons and at different times, so conflating
+them would mean editing the acquisition record to change an experiment.
+Unknown keys are rejected like the other three.
+
+Two further configs exist because the PV experiments differ from each other in a way
+that **is** the scientific question: `configs/ml_pv_nowcast.toml` (15 minutes, real
+weather enabled) and `configs/ml_pv_horizon.toml` (1/2/4/96 steps, weather off).
+
+**Status:** Accepted
+
+---
+
+## D-060 - Lookback: 672 steps (7 days)
+
+**Context:** 1 hour, 6 hours, 24 hours and 7 days were all defensible.
+
+**Decision:** 672 steps = 7 days, because it is the shortest window containing a
+full weekly cycle, and the dataset demonstrably has weekly structure: the
+seasonal-naive-week rule reaches MAE 1.83 kW at a 24-hour horizon where the
+seasonal-naive-day rule reaches 2.43 kW. Without a week of history a model cannot
+express "same time last week", which is the strongest seasonal signal here.
+
+A 96-step lookback was tested and is insufficient: `lag_672` and
+`roll_mean_same_hour_7d` are withdrawn by the feature builder, with the reason
+recorded in the dataset manifest. The withdrawal mechanism is itself tested.
+
+**Computational effect:** 672 steps is the dominant memory term of a window. It is
+affordable here only because the dataset is stored as a flat feature matrix rather
+than as dense windows (see D-065).
+
+**Status:** Accepted
+
+---
+
+## D-061 - Horizons: 15 minutes, 1 hour and 24 hours; split chronologically
+
+**Context:** the brief asks for a horizon that the data supports, that is useful to
+the eventual decision problem, that can feed optimization, and that is practical.
+
+**Decision:** horizons of 1, 4 and 96 steps (15 min, 1 h, 24 h). 15 minutes and
+1 hour serve nowcasting and intraday control; 24 hours is the horizon an
+optimiser actually needs, because a day-ahead dispatch decision is made at one
+horizon. All three are supported by the native 15-minute grid with **no
+resampling** (D-044).
+
+The split is **chronological, contiguous, by grid index**, at 70 / 15 / 15. The
+test span is the last 15% of the year, roughly 54 days, and it contains the
+dataset's own published peak timepoint (grid index 19553) - so peak-period error is
+measured on data no model has seen. Nothing is shuffled anywhere in the pipeline.
+
+Ramp error is reported as `n/a` unless two **consecutive** horizons are declared,
+because a ramp is a change between consecutive steps and computing it across a
+3-step gap would report a number that is not a ramp. The PV horizon config declares
+1 and 2 precisely so the metric exists there.
+
+**Status:** Accepted
+
+---
+
+## D-062 - Scale: a stratified 40-customer sample, stride 1
+
+**Context:** all 1,871 customers for a full year is 65.6M values. The full matrix is
+a scale problem, not a baseline problem.
+
+**Decision:** a **stratified** sample of 40 customers (25% commercial, against a
+population of 34 commercial out of 1,871, so the minority class is deliberately
+over-represented), drawn deterministically from `numpy.default_rng(seed)` across
+rated-power deciles, with the composition recorded in the dataset manifest. Sampling
+the first 40 names in sorted order would have taken a contiguous run of one
+neighbourhood and biased both class mix and magnitude.
+
+Stride is 1: every 15-minute origin is kept, giving 1,309,440 samples. Stride was
+available for a cheaper run and is recorded in the dataset version, so a strided
+dataset is a *different version*, never a silent substitution.
+
+**Consequence:** the load result is a statement about 40 real customers plus the
+feeder aggregate, not about all 1,871. Widening it is a configuration change, and
+the configuration is versioned.
+
+**Status:** Accepted
+
+---
+
+## D-063 - Per-unit normalisation by rated kW, and weather withdrawn beyond 15 minutes
+
+**Context:** two problems, both found by measurement rather than anticipated.
+
+1. Customer ratings span 1.37 kW to 387.6 kW. A single pooled model minimising
+   squared error is dominated by the largest series, and at the first attempt
+   classical ML was *worse* than the mean predictor (R2 -0.59) while persistence
+   scored 0.27 kW.
+2. The solar file ships **actual** weather observations. Using them at a 4-hour
+   horizon means using the future, because no weather forecast exists in the data.
+
+**Decision (1):** the dataset stores every target and lag **per unit of the
+series' own scale**, which is the series' rated kW for load and the 1000 kW array
+rating for PV. This is a physical quantity known for the whole forecast horizon,
+not a fitted statistic, so it leaks nothing - and it is how SMART-DS itself stores
+its profiles. Metrics are converted back to kW for reporting, so both numbers are
+available. Without it, the classical baselines were reading a scale gap as signal.
+
+**Decision (2):** weather features are withdrawn automatically whenever any declared
+horizon exceeds one step, and the withdrawal **and its reason** are recorded in the
+dataset manifest. `WEATHER_AVAILABLE_THROUGH_STEP = 1`. This is why the PV task
+exists in two configurations: a nowcast with weather, and a multi-horizon run
+without it.
+
+**Status:** Accepted
+
+---
+
+## D-064 - The feature set must include what the baseline sees
+
+**Context:** the first feature set contained `lag_1 = y[t-1]` but **not** `y[t]`. The
+persistence baseline reads `y[t]`. A model that cannot see the current measurement
+starts from a worse position than the baseline it is measured against - the
+comparison was rigged in the baseline's favour, and it showed: ridge scored 0.48 kW
+against persistence's 0.27 kW at a 15-minute horizon.
+
+**Decision:** `value_at_origin = y[t]` is a catalogue feature, with the reason
+recorded in the feature spec itself. After adding it, classical ML beat persistence
+where it genuinely can (24-hour horizon) and lost where persistence is genuinely
+near-optimal (15 minutes). The leakage guard was adjusted in the same change: it
+poisons strictly **after** the origin, because `y[t]` is the current reading and is
+knowable at prediction time.
+
+**Status:** Accepted
+
+---
+
+## D-065 - Flat feature matrices, not nested windows
+
+**Context:** the brief asks for a representation that is "easy to test and later
+transform into model tensors".
+
+**Decision:** one flat row per `(series, forecast origin)`: `features (n, f)`,
+`targets (n, horizons)`, plus `origin_index`, `series_index` and `split` arrays. A
+dense `(n, lookback)` window tensor for this dataset would be gigabytes, could not be
+`assert`-ed against, and would hard-code one model's input format.
+
+**Consequence:** every temporal invariant is directly checkable, and the GRU
+baseline reassembles its sequence from the lag columns it is entitled to.
+
+**Status:** Accepted
+
+---
+
+## D-066 - Split-dependent features are created at fit time, not stored in the dataset
+
+**Context:** a pooled model has no way to tell a 1.4 kW household from a 388 kW shop,
+so calendar terms end up absorbing cross-customer differences.
+
+**Decision:** three per-series context columns (`series_index`, `series_level`,
+`series_volatility`) are computed **inside the experiment**, from the training rows
+only, and are never written into the dataset artifact. A dataset containing
+split-dependent columns could not be reused under a different split, which would
+defeat the purpose of versioning it.
+
+The feature scaler is handled the same way: `FeatureScaler` records how many rows it
+was fitted on, and `assert_train_only_fit` raises if that is not exactly the training
+row count.
+
+**Status:** Accepted
+
+---
+
+## D-067 - Metrics: MAE and RMSE in kW, sMAPE, no MAPE, plus energy-specific measures
+
+**Context:** 52.2% of the PV target is **exactly zero** (18,304 of 35,040 steps).
+MAPE divides by the actual value and is undefined at every one of them.
+
+**Decision:** MAE in the target's own unit is the headline, because that is what a
+capacity decision is made against. RMSE is reported alongside because it is the
+sensitive one. sMAPE is reported with `0/0 = 0` defined as a perfect prediction.
+MAPE is not used anywhere.
+
+Energy-specific measures, each only where it has a definition: peak-decile error,
+ramp error (consecutive horizons only), zero-period error and daytime error. The
+last two are only meaningful for a target with exact zeros, and they earned their
+keep: at night the ridge model errs by 3.085 kW where persistence errs by 0.929 kW -
+a tree-free linear model cannot represent "output is exactly zero at night".
+
+**No composite score is produced.** One number weighting MAE against peak error
+would be an invented criterion.
+
+**Status:** Accepted
+
+---
+
+## D-068 - Regime analysis measures whether regimes exist; it does not assume them
+
+**Context:** the future Energy-MoE assumes some conditions deserve a specialist.
+
+**Decision:** derive regimes from the data - demand terciles, ramp terciles, and for
+PV the generation derivative's sign (night / morning ramp / midday / evening ramp) -
+and report per-regime error and the ratio between the worst and best regime. No
+expert is created, named or hinted at.
+
+**Result:** the premise holds. On the load task the worst-to-best regime error ratio
+is 12.8-18.5 for every family: error is concentrated in high-demand and high-ramp
+periods, roughly an order of magnitude above low-demand periods. On the PV task the
+ratio across solar phases is 15.8 for gradient boosting. That is evidence a
+regime-specialised model has something to specialise on, which is the first
+data-driven argument for the Phase 7 architecture.
+
+**Status:** Accepted
+
+---
+
+## D-069 - One fixed seed; no significance claims
+
+**Context:** the brief asks for explicit seeds and warns against claiming
+statistical significance from a single run.
+
+**Decision:** one seed, `20260101`, set for numpy and torch and recorded in every
+registry record. `verify_reproducible` re-runs a model and asserts identical
+metrics, so determinism is tested rather than assumed. **No confidence intervals,
+no multi-seed significance tests and no p-values are reported**, because one run
+cannot support them. Re-running with more seeds is the right follow-up before any
+"significantly better" claim is made about the future models.
+
+**Status:** Accepted
+
+---
+
+## D-070 - Experiment registry: committed metadata, regenerable artifacts
+
+**Context:** §32 and §34 require a reproducible record per experiment and forbid
+committing large generated artifacts.
+
+**Decision:** one JSON Lines record per experiment in `experiments/registry.jsonl`,
+carrying dataset version, dataset SHA-256, feature names, lookback, horizons, split
+fractions and counts, model, family, hyperparameters, seed, durations, metrics,
+artifact paths, host and library versions, and notes. Re-running an experiment
+**replaces** its record rather than appending a duplicate, so the history cannot
+accumulate fake trend.
+
+`experiments/registry.jsonl` is the single file added to the `.gitignore` exception
+list; the dataset arrays, reports and checkpoints stay ignored because they are
+regenerable from the configuration.
+
+**Status:** Accepted

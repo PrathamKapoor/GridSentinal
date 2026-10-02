@@ -556,3 +556,454 @@ tests/domain/test_domain_cli.py         ( 14) domain CLI + health integration
                                          492   total
 ```
 
+
+---
+
+# Phase 3 — Data ingestion flow
+
+Everything above is Phases 1-2. What follows is the ingestion pipeline, by real
+module and function name.
+
+```text
+                       configs/data.toml
+                              |
+                              v
+                config/data.py :: load_data_config()
+                              |
+                              v
+                data/smartds/layout.py :: SmartDsLayout
+                              |
+                              v
+    +-------------------------+--------------------------+
+    |                         |                          |
+    v                         v                          v
+smartds/adapter.py       smartds/schema.py        smartds/mapping.py
+  parse_dss()             discover_feeder_schema()  SMART_DS_MAPPINGS
+  load_buscoords()        discover_csv_schema()
+  _Parsed                 discover_profile_schema()
+    |                         |                          |
+    +------------+------------+                          |
+                 |                                       |
+                 v                                       |
+      adapter.loads(indices)  adapter.topology()         |
+      adapter.der_assets()    adapter.time_axis()        |
+                 |                                       |
+                 v                                       |
+      smartds/domain_mapper.py :: map_to_domain()        |
+                 |                                       |
+                 v                                       |
+      Phase 2 domain objects (EnergySystem)              |
+                 |                                       |
+                 v                                       |
+      smartds/balance.py :: validate_feeder_balance() <--+
+                 |
+                 v
+      BalanceReport  +  all reports written to artifacts/data/
+```
+
+## 1. Configuration
+
+```text
+load_data_config(path=None)
+  |-- target = path or configs/data.toml   (relative -> PROJECT_ROOT)
+  |-- tomllib.loads(...)
+  |-- reject unknown keys                    -> ConfigValidationError
+  |-- require dataset/version/year/region/subregion/scenario/substation/feeder
+  |-- raw_root: relative -> PROJECT_ROOT, expanduser()
+  |-- peak_only: bool, default True
+  `-> DataConfig
+```
+
+Three configuration files now exist, each a distinct concern:
+
+| File | Concern |
+|---|---|
+| `configs/default.toml` | **a run** - seed, device, paths, logging |
+| `configs/domain.toml` | **the environment** - time base, system boundary |
+| `configs/data.toml` | **the dataset** - what external data is ingested |
+
+Keeping the third separate follows D-037: a machine can select a dataset without
+inheriting settings it does not use.
+
+## 2. Layout resolution — `data/smartds/layout.py`
+
+`SmartDsLayout` is the only object that knows the dataset's directory
+convention. It builds `profiles_dir`, `solar_data_dir`, `placements_dir`,
+`feeder_dir` and friends, maps SMART-DS names to Phase 2 identifiers
+(`sanitize_identifier`), and exposes `s3_prefix()` for provenance locators.
+
+```text
+sanitize_identifier("p1uhs0_1247--p1udt12703") -> "p1uhs0-1247-p1udt12703"
+layout.feeder_node_id("p1udm971")            -> NodeId("node-smartds-p1udm971")
+```
+
+## 3. Parsing — `data/smartds/dss.py` and `buscoords.py`
+
+`parse_dss()` is **dataset-agnostic**: it knows the OpenDSS grammar and nothing
+about SMART-DS. It is strict — a malformed directive raises rather than being
+skipped, because a silently dropped `New Storage.*` line would make a battery
+vanish with no trace.
+
+```text
+split_directives(text)
+  |-- strip // and ! comments
+  |-- a "new" directive implicitly terminates the previous element
+  `-- returns ordered (verb, remainder)
+
+_parse_params(remainder)
+  |-- head must be "Class.name"           else raise
+  |-- scan for key=value boundaries via _KEY_VALUE_RE
+  |     the key may be percent-prefixed (%Cutout, %EffCharge) - see D-049
+  |     a value may contain '=' (mult=(file=../../x.csv)) and is not split on it
+  `-- preserve source order in .order
+```
+
+`DssObject.get_float()` raises on a non-numeric value rather than defaulting: a
+silently defaulted rating would corrupt every downstream energy total.
+
+`parse_buscoords()` is **separate on purpose**. `Buscoords.dss` contains bare
+`<bus> <lon> <lat>` lines with no directives, so `parse_dss` returns zero
+elements and every node would silently appear to have no location.
+
+## 4. Schema discovery — `data/smartds/schema.py`
+
+Everything reported is derived by reading the files.
+
+```text
+discover_dss_schema(path)        -> classes, per-class parameter union, element count
+discover_csv_schema(path)        -> columns, inferred type, min/max, missing, distinct
+discover_profile_schema(path)    -> rows, range, is_normalised
+discover_buscoords_schema(path)  -> count, fields, units, example
+discover_feeder_schema(layout)   -> all of the above for one feeder,
+                                    ABSENT files reported as absent, not assumed empty
+```
+
+## 5. Normalization — `data/smartds/normalize.py`
+
+Three things, each recorded as provenance.
+
+```text
+TimeAxis(timestep_minutes, points, year, assumed_utc)
+  |-- built from LoadShapes npts, NOT from a constant
+  |-- timestamp(index) / index(timestamp) round-trip exactly
+  |-- rejects an off-grid timestamp rather than rounding it
+  `-- matches_domain_grid is True (15 min, multiple of 96)
+
+P(t) = sum over customer members of (kW_rating * profile_pu(t))
+```
+
+`TIMEZONE_ASSUMPTION` is exported and embedded in every time-axis description
+and provenance chain (D-045).
+
+## 6. Adapter — `data/smartds/adapter.py`
+
+The facade. Dataset-specific knowledge stops here.
+
+```text
+SmartDsAdapter(layout)
+  |
+  |-- parsed()        -> _Parsed(loads, shapes, lines, transformers, pv, storage, base_kv)
+  |                     each file parsed once and cached
+  |-- time_axis()     -> TimeAxis from LoadShapes npts
+  |                     raises if no npts is declared: the vector length is unknown
+  |-- loads(indices)  -> LoadCatalogue
+  |     group by base name, stripping the _1/_2 centre-tap suffix
+  |     SUM both members (D-043)
+  |     series built only at the requested indices
+  |     a missing profile -> recorded as a QualityFinding, load listed as unmapped
+  |-- topology()      -> TopologyCatalogue
+  |     edges from Lines bus1/bus2 with phase suffixes stripped
+  |     every discovered element bus added, so every load, PV and storage
+  |     point is a declared node (D-053)
+  |     the true bus name carried alongside each sanitised NodeId
+  |     Buscoords attached when present, absence reported
+  |-- source_bus()    -> the Circuit element's bus1 from Master.dss, i.e. the
+  |                     point of common coupling. Read, never inferred
+  |-- der_assets()    -> DerAssetCatalogue
+  |     solar  from PVSystems Pmpp
+  |     battery from Storage kWRated / kWhRated / kWhStored / %EffCharge /
+  |     %EffDischarge as a BatteryAssetSpec (round-trip = charge x discharge)
+  |     EV sites counted from placement JSON
+  |     battery dispatch, usable energy, SOC window and directional limits
+  |     reported as a MISSING finding (D-046)
+  `-- quality_report() -> QualityReport(findings, axis, mappings)
+```
+
+## 7. Domain mapping — `data/smartds/domain_mapper.py`
+
+The only place that constructs Phase 2 objects from real data.
+
+```text
+map_to_domain(adapter, load_catalogue, topology_catalogue, der_catalogue,
+              demand_kw, demand_quality, summary_customer_kw, event_timestamp)
+  |
+  |-- Nodes          from discovered buses; exactly one is_grid_connection.
+  |                   The PCC is READ from Master.dss `Circuit.bus1`, never
+  |                   inferred from the folder name (D-051). If it is missing or
+  |                   absent from the graph, raise UnresolvedBoundaryError -
+  |                   no bus is ever promoted to PCC by guesswork.
+  |-- NetworkElements one per Line edge, from/to resolved
+  |-- Assets         ONE Asset per customer (NOT_CONTROLLABLE), each on its own
+  |                  connection bus, members and centre-tap status in metadata,
+  |                  flexibility recorded as NOT STATED (D-052).
+  |                  SolarAsset per PVSystem (CURTAILABLE).
+  |                  Battery per Storage (DISPATCHABLE): nameplate_energy only;
+  |                  usable_energy, min_soc, max_soc and both directional power
+  |                  limits are None because the dataset states none (D-050).
+  |                  NO EV asset: a charging profile cannot be invented.
+  |-- Observations   total_demand_kw as DERIVED, and the dataset's own
+  |                  published_customer_demand_kw as OBSERVATION, both at the
+  |                  real event timestamp with mandatory provenance.
+  |-- TimeBase       timestep and origin from the discovered axis
+  `-- EnergySystem   with mandatory Provenance pointing at the real SMART-DS path
+```
+
+Every field the source does not state arrives as `None` and is named in
+`MappingReport.unknown_fields`. `None` means *not known*; it never means zero.
+
+`availability = 1.0` for every asset, with the basis recorded in
+`MappingReport.availability_basis`: SMART-DS models everything as in service,
+which is a modelling fact, not a measurement (G-08).
+
+## 8. Balance validation — `data/smartds/balance.py`
+
+```text
+validate_feeder_balance(summary, reconstructed_*, node_count)
+  |
+  |-- identity 1: reconstruction fidelity, total customer demand
+  |-- identity 2: reconstruction fidelity, commercial
+  |-- identity 3: reconstruction fidelity, residential
+  |-- identity 4: published internal, losses + customer = circuit
+  |-- identity 5: published internal, commercial + residential = customer
+  |
+  `-- residual statistics: max / mean / median / p95, count above tolerance
+```
+
+Identities 1-3 test **our ingestion**. Identities 4-5 test **SMART-DS's own
+consistency**. They are reported separately because conflating them would hide
+which one is failing.
+
+`TOLERANCE_KW = 0.5` is a module constant with no setter. Metrics that could not
+be computed are `None`, never zero. Unavailable evaluations are listed in
+`report.unavailable` with their reason.
+
+## 9. Pipeline and artifacts — `data/smartds/pipeline.py`
+
+```text
+run_ingestion(layout, peak_only)
+  |-- build_manifest()  -> SHA-256 per acquired file, content digest excluding time
+  |-- adapter.time_axis() -> native grid
+  |-- read Summary_data.csv -> published peak index
+  |-- adapter.loads(indices=(peak_index,)) / topology() / der_assets()
+  |-- map_to_domain()      -> EnergySystem
+  |-- validate_feeder_balance()
+  `-- artifacts written to artifacts/data/:
+        manifest.json  schema_report.json  quality_report.json
+        balance_report.json  reconstruction.json  mapping_report.json
+        energy_system.json
+
+`mapping_report.json` also carries the two ObservationRecords, so a reader can
+tell a reconstruction from the dataset's own published figure without opening
+a second file.
+```
+
+The provenance event timestamp is the **data's** timestamp, not wall-clock time,
+so a re-run produces a byte-identical `energy_system.json`. Acquisition time
+lives in the manifest, documented as the one nondeterministic field.
+
+## 10. CLI
+
+```text
+energy-intel data config     print the resolved dataset selection
+energy-intel data inspect    schema + assets + quality, no domain mapping
+energy-intel data ingest     full pipeline, writes all artifacts
+energy-intel data validate   balance report; exit 1 when it FAILS
+energy-intel data mapping    the full field-mapping table as JSON
+energy-intel data manifest   manifest summary with the content digest
+```
+
+A missing dataset exits 1 with a pointer to `docs/smart_ds_acquisition.md`
+rather than crashing.
+
+## 11. Tests — `tests/data/`
+
+```text
+conftest.py                     layout built from real extracted fixtures
+fixtures/                       verbatim excerpts of real SMART-DS v1.0 files
+test_parsing.py                  OpenDSS + Buscoords + CSV parsing, manifest, digests
+test_adapter_and_balance.py      time axis, loads, topology, DER, mapping,
+                                 what must NOT be invented, balance, plus
+                                 integration against the full real dataset
+```
+
+Fixtures are produced by `scripts/extract_fixtures.py`, which records every file
+and every truncation in `FIXTURE_PROVENANCE.json` (D-048).
+
+---
+
+# Phase 4 — ML pipeline
+
+Everything above is Phases 1-3. What follows is the machine-learning pipeline, by
+real module and function name.
+
+```text
+data/raw/smart_ds/v1.0/...                       (acquired in Phase 3)
+        │
+        ├── loads/*.csv  Loads.dss  →  adapter.loads(names=…)      DERIVED
+        └── solar_data/*.csv                      →  solar_target()  OBSERVED
+                            │
+                            v
+              ml/targets.py :: TargetSeries
+              (values, series_ids, scale, value_origin, provenance)
+                            │
+                            v
+              ml/dataset.py :: build_dataset(TargetSeries, DatasetBuildConfig)
+                 ├── ml/features.py :: available_feature_names() → what is legal
+                 ├── ml/features.py :: build_feature_matrix()      → X
+                 ├── ml/splits.py   :: split_boundaries()          → 70/15/15
+                 ├── ml/splits.py   :: per-split origin windows    → no crossing
+                 ├── ml/features.py :: assert_no_future_access()   → leakage proof
+                 └── ml/dataset.py  :: save_dataset()  → artifacts/ml/<label>/dataset
+                            │
+                            v
+              ml/experiment.py :: run_experiment(dataset, model, seed, series)
+                 ├── ml/scaling.py     FeatureScaler.fit(train only) → assert
+                 ├── ml/baselines/naive.py      fit_naive / naive_forecast
+                 ├── ml/baselines/classical.py  fit_classical
+                 ├── ml/baselines/neural.py     fit_neural
+                 └── ml/metrics.py    evaluate() → MetricSet
+                            │
+                            v
+              ml/analysis.py :: regime_report(), error_analysis()
+                            │
+                            v
+       artifacts/ml/<label>/reports/*.json + experiments/registry.jsonl
+```
+
+## 1. Target extraction — `ml/targets.py`
+
+`TARGET_REGISTRY` declares every candidate the brief listed, each with source, unit,
+resolution, coverage, missingness, granularity, feasibility, status and **evidence**.
+Three targets are extracted; four are refused.
+
+| Target | Extractor | Value origin | Scale (per-unit divisor) |
+|---|---|---|---|
+| `customer_load` | `load_target()` | `DERIVED` | the customer's summed `kW` rating |
+| `feeder_load` | `feeder_load_target()` | `DERIVED` | total connected `kW` |
+| `pv_generation` | `solar_target()` | `OBSERVED` | the 1000 kW array rating in the column name |
+
+`select_customer_sample()` draws a stratified, seeded subset — stratified by class and
+rated-power decile, because the first N names in sorted order are one neighbourhood
+and would bias both class mix and magnitude.
+
+`feeder_load_target()` accumulates **per profile** (341 files weighted by the summed
+kW of every Load object using them) rather than per customer, which avoids holding
+1,871 whole-year series in memory. A test asserts it equals Phase 3's per-customer sum
+to 1e-6 kW at the published peak.
+
+**Error behaviour:** an unknown target raises `KeyError` listing the declared ones; a
+request for an `UNSUPPORTED` target raises with the missing quantity and its
+evidence; a solar file with the wrong row count raises rather than being padded;
+missing columns raise rather than being substituted; zero-rated-power series raise
+rather than producing infinite per-unit values.
+
+## 2. Features and the availability policy — `ml/features.py`
+
+`FEATURE_CATALOGUE` declares 17 features with formula, reason, source, availability
+(`at_or_before_origin` or `origin_only`), value kind and minimum lookback.
+
+`available_feature_names(lookback, max_horizon, has_weather)` resolves what is
+actually usable and returns **both** the selection and the withdrawals with reasons,
+so the dataset manifest records why a feature is missing rather than a shorter list
+appearing without explanation. Weather is withdrawn beyond one step, because the
+dataset has no weather *forecast*.
+
+`build_feature_matrix()` gathers lags, trailing windows and calendar values. The
+trailing window is built by gather over `[t-96, t-1]`, so it provably cannot include
+`t`.
+
+`assert_no_future_access()` is the leakage guard. For a deterministic sample of
+positions it rebuilds that one row twice — once from the real series, once from a copy
+where everything **strictly after** that row's origin is `NaN` — and requires
+byte-identical results. It is per sample on purpose: poisoning a whole block also
+destroys later samples' legitimate inputs and would prove nothing.
+
+**Error behaviour:** an unknown feature name, a wrong-length builder result, a
+non-finite value, an origin earlier than the required history, and a `steps_per_day`
+that is not a whole number of hours all raise rather than degrade.
+
+## 3. Splits — `ml/splits.py`
+
+`split_boundaries()` cuts the grid into three contiguous ranges. `sample_splits()`
+assigns a sample only when its **entire** lookback and target windows fit inside one
+range, and marks anything else `-1` (dropped). `build_dataset()` constructs origins
+per split so nothing needs filtering afterwards, then re-derives the assignment with
+`sample_splits()` and asserts the two agree — a belt-and-braces check on the single
+most important property in the phase.
+
+## 4. The dataset artifact — `ml/dataset.py`
+
+One flat row per `(series, origin)`: `features`, `targets`, `origin_index`,
+`series_index`, `split`, plus `series_scale` and the manifest. `dataset_version()` is
+content-addressed over target, lookback, horizons, split fractions, stride, weather
+flag and series identity, so any shape change produces a new version.
+
+Saved as `<version>.npz` (arrays) beside `<version>.json` (manifest with feature
+definitions, withdrawals, split boundaries, provenance, normalisation basis and an
+array digest).
+
+## 5. Scaling — `ml/scaling.py`
+
+`FeatureScaler.fit(train_rows)` then `transform` on everything.
+`assert_train_only_fit()` raises unless the fitted row count equals the training row
+count exactly. Constant columns map to scale 1.0 and become exactly zero rather than
+dividing by zero.
+
+## 6. Baselines
+
+| Module | Models | Notes |
+|---|---|---|
+| `baselines/naive.py` | `last_value`, `seasonal_day`, `seasonal_week`, `drift` | unfitted; seasonal offsets are exact `t + h − m`, asserted in tests |
+| `baselines/classical.py` | `ridge`, `hist_gbm` | ridge exposes a coefficient table, which is the interpretability diagnostic |
+| `baselines/neural.py` | `mlp`, `gru` | one conventional baseline each; fixed seeds; no search |
+
+Naive models are given the **real series history** rather than approximated from
+feature columns, because the seasonal offset depends on the horizon and an
+approximation would misalign it by up to `h` steps. Asking for a naive model without
+the series raises.
+
+## 7. Evaluation — `ml/experiment.py`, `ml/metrics.py`
+
+The runner fits on training rows only, predicts the test split, converts predictions
+back to kW by multiplying by the row's own scale, and reports MAE, RMSE, sMAPE, R²,
+peak-decile error, ramp error, zero-period error, daytime error, plus the per-unit MAE
+and the sample count.
+
+Ramp error is computed only where two **consecutive** horizons exist, and is `n/a`
+otherwise. `_series_context()` adds per-series identity columns at fit time from
+training rows only — never written into the dataset, because they depend on the split.
+
+## 8. Analysis and artifacts — `ml/analysis.py`, `ml/runner.py`, `ml/registry.py`
+
+`assign_regimes()` derives regime axes from the target (demand terciles, ramp terciles;
+solar phase from the generation derivative). `regime_report()` reports per-regime
+error and the worst-to-best ratio. `error_analysis()` reports worst rows with
+timestamps, worst series, and the error profile by hour and month.
+
+`run_phase4()` writes the dataset, the comparison table (Markdown and JSON), the
+regime report, one error report per model, a summary, and one registry record per
+experiment.
+
+## 9. Entry points
+
+```text
+energy-intel ml config       resolved experiment configuration
+energy-intel ml targets      every target with its support status and evidence
+energy-intel ml features     the feature catalogue and the availability policy
+energy-intel ml dataset      build and persist the dataset, no training
+energy-intel ml run          dataset + baselines + analysis + registry
+energy-intel ml experiments  the recorded registry
+```
+
+All are invoked as `energy-intel ml --ml-config <path> <subcommand>`, because the
+config selects the subcommand's experiment before the subcommand runs.

@@ -1,410 +1,460 @@
-# Handoff — Phase 2
+# Handoff — Phase 4
 
 **Project:** Energy Intelligence — adaptive, self-verifying energy management
 **Event:** Yuva Yodha Energy Tech Hackathon 2026, Schneider Electric
-**Current phase:** **Phase 2 of 20 — Energy System Definition + Data Model — COMPLETE**
-**Previous phase:** Phase 1 — foundation and scaffolding — complete, **unmodified**
-**Date:** 2026-10-02
+**Current phase:** **Phase 4 of 20 — ML-ready dataset + baseline forecasting — COMPLETE**
+**Previous phases:** Phase 1 foundation, Phase 2 domain contract, Phase 3 SMART-DS ingestion — **all preserved, zero regressions**
+**Date:** 2026-10-03
 **Author of all work:** PrathamKapoor <prathamkapoor027@gmail.com>
 
 ---
 
-## 1. Completed work
+## 1. Work completed
 
-Phase 2 delivered in full. Nothing from a later phase was implemented.
+Phase 4 answered two questions with measurements:
 
-### Step 1 — inspection (as the brief required)
+> Can real SMART-DS data become a temporally correct, leakage-free ML dataset?
 
-| Check | Result |
+**Yes.** And:
+
+> How difficult is forecasting, before any custom model exists?
+
+**Measured, and recorded below.** No Energy World Model, no Qwen, no Energy-MoE, no
+optimiser, no agent and no UI was built. This was a baseline phase, and it stayed one.
+
+### Steps 1-14 — inspection
+
+Full re-inspection before any change: repository state, branch, identity, all four
+Phase 1-3 documents, the Phase 2 specification, the SMART-DS acquisition and mapping
+documents, every processed artifact under `artifacts/data/`, the Phase 3 validation
+reports, all configuration files, the test suite, and the real files themselves.
+
+The decisive inspection finding came from reading the actual PV scenario files rather
+than the documentation: **the 20 irradiance loadshapes the 1,216 `PVSystem` objects
+reference do not exist anywhere in the dataset** (M-04). The one `solar_data` file that
+*is* present is a different location (30.3459 N, not 30.4196 N). This closes Phase 3's
+G-03: the feeder PV link is not merely unresolved, it is unresolvable from this source.
+
+### Steps 15-20 — targets, dataset, baselines
+
+| Step | Result |
 |---|---|
-| Repo root at start | Phase 1 commit `2571c48`, working tree clean |
-| Phase 1 architecture | Read and **preserved**. `AppConfig`, `paths.py`, `logging_setup.py`, `health.py`, `cli.py` all extended or left untouched |
-| Phase 1 docs | `README.md`, `decisions.md`, `flow.md`, `handoff.md`, `docs/architecture.md` read |
-| SAT-SA repository | Cloned and inspected (825 files) |
-| Guardrailed repository | Cloned and inspected (1,254 files) |
+| Target registry | 7 candidates declared, **3 real / 4 refused** with evidence |
+| Extraction | per-customer load, feeder total, PV generation — all on the native 15-minute grid, no resampling |
+| Cross-phase proof | Phase 4's per-profile feeder total equals Phase 3's per-customer sum to **5e-12 kW** |
+| Leakage guard | poisons the future **per sample** and proves every feature is unchanged; the guard is itself tested against a deliberately leaking feature |
+| Dataset | `ds-16ff1dabe80b`, **1,309,440 samples**, 13 features, 40 series, 3 horizons |
+| Splits | chronological 70/15/15; **0** samples dropped, because windows are constructed per split |
+| Baselines | 4 naive, 2 classical, 2 neural — all measured, none tuned |
+| Regime analysis | regimes derived from the data, ratios measured, no expert invented |
+| Error analysis | worst rows with timestamps, worst series, error by hour and month |
 
-### Steps 2–5 — source research (findings, not assumptions)
+### Steps 21-26 — test, document, commit
 
-| Finding | Evidence |
-|---|---|
-| **SAT-SA is a cybersecurity SOC supervision project with zero energy content** | `battery`, `feeder`, `voltage`, `storage` → 0 hits in `src/` |
-| **Guard is forecasting MLOps on aggregate bulk data, not distribution DERs** | RTS-GMLC, 2020, hourly, 8,784 rows, LOAD/WIND/PV; `battery`, `EV`, `HVAC`, `curtail`, `feeder`, `voltage`, `storage` → **0 hits** |
-| **Neither models uncertainty** | Guard: `quantile`, `conformal`, `ensemble`, `aleatoric`, `epistemic` → 0 hits |
-| **Neither has a red team, digital twin or optimizer** | `red.?team`, `adversar`, `digital.?twin`, `simulat`, `optimiz`, `MILP`, `MPC`, `cvxpy` → 0 hits in Guard |
-| **SAT-SA's advertised 13-field agent contract is not implemented** | `analysis_period` → 2 hits, both docstrings; no matching class exists |
-| **Guard's agent contract and capability firewall are genuinely implemented** | `agents/schemas.py` `AgentOutput`; `agents/firewall.py` allow/block lists, unknown blocked by default |
-| **SAT-SA's provenance layer is strong** | `SourceRecord`, `ProvenanceRecord`, hash-chained ledger, canonical-form module |
+737 tests passing, 89% coverage.
 
-**Conclusion:** the energy domain had to be built here. What was reusable was
-architectural *pattern*, not code — recorded in
-`docs/agent_responsibility_matrix.md` §1 as R1–R12.
+---
 
-### Steps 6–9 — blocking decisions, escalated rather than guessed
+## 2. Key findings
 
-Four genuinely blocking questions were put to the user rather than decided
-silently. All four recommendations were accepted:
+### F-01 — Persistence beats machine learning at 15 minutes
 
-| # | Question | Decision | Recorded |
+| Model | h=1 (15 min) MAE | h=4 (1 h) | h=96 (24 h) |
 |---|---|---|---|
-| 1 | Topology fidelity | Topology-aware, node-granular, physics deferred | D-023 |
-| 2 | Temporal resolution / horizon | 15-min native, H=96 day-ahead, hourly derived | D-024 |
-| 3 | Control authority | Tiered per-asset authority, carried on the action | D-028 |
-| 4 | Dataset anchor | SMART-DS as representability anchor, model stays agnostic | D-038 |
+| naive last value | **0.4043 kW** | 0.8897 | 2.4343 |
+| naive seasonal (week) | 1.8673 | 1.8638 | 1.8306 |
+| classical ridge | 0.5193 | 1.0878 | 2.1920 |
+| **classical hist GBM** | 0.4242 | **0.8579** | **1.5648** |
+| neural MLP | 0.4638 | 0.9315 | 6.4850 |
+| neural GRU | 0.5691 | 0.8976 | 2.2856 |
 
-### Steps 10–18 — implementation
+Household and commercial load on a 15-minute grid is so smooth that repeating the last
+value is hard to beat at one step ahead. **Classical ML earns its keep only as the
+horizon grows**, where it beats persistence by 36% at 24 hours.
 
-`src/energy_intelligence/domain/` — **20 modules, the formal contract**:
+### F-02 — The neural baseline does not beat classical here
 
-| Module | Responsibility |
-|---|---|
-| `errors.py` | `DomainError`, `DomainValidationError` (collects **all** violations) |
-| `enums.py` | The controlled vocabulary: units, roles, assets, authority, actions, constraints, objectives, quality, origins, uncertainty kinds |
-| `identifiers.py` | `AssetId`, `NodeId`, `NetworkElementId`, `ConstraintId`, `ObjectiveId`, `ActionId`, `ForecastId`, `SystemId` |
-| `quantities.py` | `Quantity(value, Unit)`; rejects NaN/inf; explicit unit comparison |
-| `provenance.py` | `SourceReference`, `ProvenanceEvent`, `ProcessingStep`, `Provenance` |
-| `quality.py` | `DataQuality`, `CLEAN_QUALITY` |
-| `timebase.py` | `TimeBase` grid arithmetic; rejects naive and off-grid timestamps |
-| `uncertainty.py` | `UncertaintyEstimate`; `TBD` method; `UNKNOWN` kind legal |
-| `observations.py` | `ObservationRecord` + the action/observation boundary |
-| `topology.py` | `Node`, `NetworkElement`, `NetworkTopology` |
-| `assets.py` | `Asset`, `SolarAsset`, `WindAsset`, `Battery`, `EVCharger`, `FlexibleLoad` |
-| `state.py` | `NodePower`, `StorageState`, `RenewableState`, `DemandState`, `EVState`, `GridState`, `EnergyState` |
-| `actions.py` | `Action`, authority sufficiency, unit and sign rules |
-| `constraints.py` | `ConstraintCategory`, `Constraint` — declared, never enforced |
-| `objectives.py` | `ObjectiveCategory`, `Objective` — with conflicts, **no weight** |
-| `forecasts.py` | `Forecast` with uncertainty attachment |
-| `system.py` | `EnergySystem` + cross-entity referential integrity |
-| `serialization.py` | Deterministic versioned JSON, round-trip enforced |
-| `__init__.py` | 77-symbol public surface |
+The MLP collapses at 24 hours (6.4850 kW, *worse than persistence*), in **per-unit
+terms too** — MAE 0.1628 against gradient boosting's 0.0481 — so it is a genuine
+model limitation and not a unit-weighting artefact. The GRU costs 1233 s against the
+MLP's 389 s and gains nothing.
 
-Also added: `config/domain.py` + `configs/domain.toml`, three new CLI commands, a
-seventh health check, and documentation.
+Both were left untuned by decision (D-056): a baseline tuned until it wins is not a
+baseline. This is an **untuned-baseline** result, and it bounds what an
+off-the-shelf neural baseline achieves on this data — not what a tuned one could.
 
-### Answers to the brief's §36 completion questions
+### F-03 — Regime structure is real, and it was measured rather than assumed
 
-| Question | Answer | Where |
-|---|---|---|
-| **What are we modelling?** | Renewable-integrated distribution-level DER environment | spec §1 |
-| **What does it observe?** | `ObservationRecord` with `VariableRole`, enforced non-interchangeable with actions | spec §2, §10 |
-| **What can it control?** | 9 `ActionType`s with units, sign rules, durations and authority gates | spec §3 |
-| **What can it not violate?** | 12 `ConstraintCategory` values, declared and bound to real assets | spec §4 |
-| **What does it optimise?** | 10 `ObjectiveCategory` values with direction, unit and declared conflicts; unweighted | spec §5 |
-| **What does uncertainty mean?** | `UncertaintyEstimate` container, 5 kinds, method `TBD` until Phase 8 | spec §10 |
-| **Where did the data come from?** | Mandatory `Provenance` on every domain object | spec §8 |
-| **How are assets represented?** | Typed hierarchy, 5 subclasses each carrying only its own fields | spec §2 |
-| **How will models consume it?** | `EnergyState` → `ObservationRecord` → `Forecast`, via deterministic versioned JSON | spec §12 |
-| **How will agents interact?** | `docs/agent_responsibility_matrix.md` — 23 candidates, responsibilities sourced | matrix §2, §3 |
+Worst-to-best regime error ratios: **12.7-18.5** on the load task, **15.8** across
+solar phases. On the load task, high-demand periods cost gradient boosting 0.98 kW
+against 0.09 kW in low-demand periods — an order of magnitude.
+
+Error concentrates in **high-demand and high-ramp** periods, and in the **evening and
+morning PV ramps**. This is the first data-driven support for the premise a Phase 7
+Energy-MoE would rest on.
+
+*Caveat, stated because it matters:* the ratio is unstable for rules whose error
+approaches zero in some regimes — `naive_seasonal_day` reports 1860, which is an
+artefact of a 0.12 kW denominator, not a finding. Read the per-regime MAEs, not the
+ratio, for the naive rules.
+
+### F-04 — Day-ahead PV is a missing-input problem
+
+| PV configuration | h=1 | h=96 | R² at 96 h |
+|---|---|---|---|
+| weather at the origin (nowcast) | **8.57 kW** (0.86% of capacity) | — | — |
+| no weather | 8.48 kW | 74.34 kW vs persistence 79.59 | 0.62 |
+
+With actual weather at the origin, PV is easy. Without it, a 24-hour forecast is
+**barely better than doing nothing**. The dataset contains no weather *forecast*, so
+Phase 4 withdraws weather features structurally beyond 15 minutes rather than quietly
+using the future.
+
+### F-05 — Percentage metrics are actively misleading for PV
+
+sMAPE reads **126%** while MAE is 0.86% of array capacity, because 52.2% of the target
+(18,304 of 35,040 steps) is exactly zero at night. MAPE is never used anywhere in this
+phase. sMAPE defines `0/0 = 0` as a perfect prediction and is bounded to `[0, 200]`.
+
+The zero-period metric earned its keep immediately: at night the ridge model errs by
+**5.99 kW** where persistence errs by 0.91 kW. A linear model cannot represent
+"generation is exactly zero at night".
+
+### F-06 — Two bugs of my own, both found by the tests and both material
+
+1. **The row layout was wrong.** The dataset stored one row ordering while
+   `build_feature_matrix` assumed the opposite, so every feature was read from the
+   wrong customer. Nothing crashed; targets and features stayed *internally*
+   consistent, so all metrics were silently meaningless. Correlation between the target
+   and `lag_1` was **0.029** where it should be ~0.99. Caught by asking why a model
+   scored worse than the mean predictor.
+2. **The feature set was weaker than the baseline it was measured against.** It had
+   `y[t-1]` but not `y[t]`, while persistence reads `y[t]`. Ridge scored 0.48 kW
+   against persistence's 0.27 kW — a rigged comparison. Adding `value_at_origin`
+   (D-064) reversed the honest result.
+
+Both are now regression-tested. The general lesson, recorded for the next phase: a
+pipeline that is internally consistent can still be entirely wrong, so cross-checks
+against an *independent* implementation are not optional.
+
+### F-07 — The Phase 3 balance failure does not affect any ML target
+
+The 20.4506 kW residual is a **feeder-level constant at the published peak**. It is
+not a per-customer quantity, so it cannot enter a per-customer target, and it is not a
+per-step quantity, so it cannot enter a time series. It is **orthogonal** to this
+phase's forecasting tasks.
+
+It was not "repaired", the 0.5 kW criterion was not touched, and no data was
+normalised to make it disappear. The note is written into every Phase 4 summary
+artifact so the next reader cannot mistake the two findings for one.
 
 ---
 
-## 2. Files changed
-
-All new except three Phase 1 files that were extended, and no Phase 1 file
-deleted or replaced.
+## 3. Files changed
 
 ```text
-NEW  src/energy_intelligence/domain/            20 modules
-NEW  src/energy_intelligence/config/domain.py
-NEW  configs/domain.toml
-NEW  tests/domain/conftest.py
-NEW  tests/domain/test_values.py
-NEW  tests/domain/test_topology_assets_state.py
-NEW  tests/domain/test_state_components.py
-NEW  tests/domain/test_system_serialization.py
-NEW  tests/domain/test_domain_config.py
-NEW  tests/domain/test_domain_cli.py
-NEW  docs/energy_system_spec.md
-NEW  docs/agent_responsibility_matrix.md
+NEW  src/energy_intelligence/ml/__init__.py
+NEW  src/energy_intelligence/ml/targets.py       which targets exist, and which do not
+NEW  src/energy_intelligence/ml/features.py      feature catalogue + leakage guard
+NEW  src/energy_intelligence/ml/splits.py        chronological splits, boundary rules
+NEW  src/energy_intelligence/ml/dataset.py       windowing, schema, versioning, artifact
+NEW  src/energy_intelligence/ml/scaling.py       train-only preprocessing
+NEW  src/energy_intelligence/ml/metrics.py       generic + energy-specific measures
+NEW  src/energy_intelligence/ml/analysis.py       regime and error analysis
+NEW  src/energy_intelligence/ml/baselines/{__init__,naive,classical,neural}.py
+NEW  src/energy_intelligence/ml/experiment.py    one experiment, end to end
+NEW  src/energy_intelligence/ml/registry.py      reproducible experiment records
+NEW  src/energy_intelligence/ml/runner.py        artifact production
+NEW  src/energy_intelligence/ml/pipeline.py      config-to-data bridge
+NEW  src/energy_intelligence/ml/config_ml_bridge.py
+NEW  src/energy_intelligence/config/ml.py        fourth configuration file
+NEW  configs/ml.toml, ml_pv_nowcast.toml, ml_pv_horizon.toml
+NEW  tests/ml/{conftest,test_targets,test_features,test_dataset,test_models,test_pipeline}.py
+NEW  docs/ml_data_gap_report.md
 
-EXTENDED  src/energy_intelligence/health.py     + check_domain_config (7th check)
-EXTENDED  src/energy_intelligence/cli.py        + domain show|validate|vocabulary
-EXTENDED  tests/test_health.py                  + domain_config in expected checks
-EXTENDED  README.md, decisions.md, flow.md      Phase 1 + Phase 2 documentation
+EXTENDED  src/energy_intelligence/cli.py               + ml {config,targets,features,dataset,run,experiments}
+EXTENDED  src/energy_intelligence/data/smartds/adapter.py   loads(names=…), profile_filename(), source_bus()
+EXTENDED  src/energy_intelligence/data/smartds/normalize.py CustomerLoad.bus, .is_commercial
+EXTENDED  pyproject.toml      + numpy, scikit-learn, torch (CPU index)
+EXTENDED  .gitignore          + experiments/registry.jsonl exception
+EXTENDED  tests/test_package.py  Phase 1 dependency guard tightened, not deleted
+EXTENDED  README.md, decisions.md (D-055…D-070), flow.md
 ```
 
-Phase 1 source (`config/schema.py`, `config/loader.py`, `logging_setup.py`,
-`paths.py`, `__init__.py`, `__main__.py`) is **byte-unchanged**.
+**Not modified:** any Phase 2 `domain/` module, the 0.5 kW balance criterion, or the
+Phase 3 reconstruction arithmetic.
 
 ---
 
-## 3. Current architecture
+## 4. Current architecture and state
 
 ```text
-energy_intelligence/
-├── config/          schema.py (run cfg) + loader.py + domain.py (domain cfg)
-├── domain/          the Phase 2 energy contract (20 modules)
-├── cli.py           health | config | domain | init-dirs | paths
-├── health.py        7 independent checks with remedies and exit codes
-├── logging_setup.py structured JSON Lines logging
-└── paths.py         canonical filesystem layout
+SMART-DS files
+   └─ ml/targets.py ────────► TargetSeries (values, scale, value_origin, provenance)
+        └─ ml/dataset.py ───► MlDataset (features, targets, origin_index, series_index, split)
+             ├─ ml/features.py   availability policy + leakage guard
+             ├─ ml/splits.py     chronological boundaries
+             └─ ml/scaling.py    train-only, asserted
+                  └─ ml/experiment.py ─► ml/baselines/{naive,classical,neural}
+                       └─ ml/metrics.py ─► ml/analysis.py ─► artifacts + registry
 ```
 
-Runtime flow: `load_domain_config()` → construct domain objects (each validating
-itself) → `EnergySystem` referential integrity → `encode()`/`decode()` for
-handover between phases. Full detail in `flow.md`.
+Artifacts (all git-ignored except the registry):
+
+```text
+artifacts/ml/load-40/         dataset ds-16ff1dabe80b (.npz + .json), reports/
+artifacts/ml/pv-nowcast/      dataset ds-d381ee913098, reports/
+artifacts/ml/pv-no-weather/   dataset ds-77f04fd46328, reports/
+experiments/registry.jsonl    15 records: 8 models x 3 horizons, load task
+                              + 6 PV nowcast + 12 PV no-weather
+```
 
 ---
 
-## 4. Key decisions
+## 5. Decisions made
 
-Full detail in `decisions.md` (D-022 … D-039). The ones that constrain later work:
+Full detail in `decisions.md` (D-055 … D-070). The ones that bind later phases:
 
-| ID | Decision | Constraint on later phases |
+| ID | Decision | Binding constraint |
 |---|---|---|
-| D-022 | Distribution-level DER environment | **RTS-GMLC cannot be this project's dataset** |
-| D-023 | Topology node-granular, physics deferred | Voltage/current are observations only until Phase 11 |
-| D-024 | 15 min × 96 steps | Config-driven, changeable without code edits |
-| D-026 | No unit conversion ever | Helpers return `None` rather than guess |
-| D-027 | Typed identifiers with prefixes | New entity kinds need a new identifier class |
-| D-028 | Tiered authority; sufficiency is a set, not a ranking | Never rank `AuthorityLevel` — it's a `StrEnum` |
-| D-030 | Constraints declared, never enforced | No formulation before Phase 10 |
-| D-031 | Objectives unweighted, **no `weight` field** | Adding one is a recorded decision |
-| D-032 | Provenance mandatory; ledger machinery not copied | `checksum` should become mandatory in Phase 3 |
-| D-035 | `StateOrigin` mandatory | Observed/simulated/predicted are never interchangeable |
-| D-037 | Domain config separate from `AppConfig` | Two files, two loaders — deliberately |
-| D-038 | SMART-DS is an **anchor**, not a download | Phase 3 selects and fetches |
+| D-055 | Exactly three runtime dependencies; pandas rejected; **domain layer imports no ML library** | tested, not merely intended |
+| D-056 | Baselines are evaluated, never tuned | the neural failure below is a real bound on an *untuned* baseline |
+| D-057 | Adapter gains a customer filter; feeder total accumulated per profile | cross-phase agreement asserted to 1e-6 kW |
+| D-058 | 3 targets supported, 4 refused by name with evidence | no empty datasets, no fabricated tasks |
+| D-059 | Experiment shape is a **fourth** config file | changing a lookback must not edit the acquisition record |
+| D-060 | Lookback 672 steps (7 days) | the shortest window containing a full weekly cycle |
+| D-061 | Horizons 1/4/96 steps; chronological 70/15/15 | ramp error is `n/a` unless horizons are consecutive |
+| D-062 | Stratified 40-customer sample, stride 1 | 65.6M values is a scale problem, not a baseline problem |
+| D-063 | Per-unit normalisation by rated kW; **weather withdrawn beyond 15 min** | `WEATHER_AVAILABLE_THROUGH_STEP = 1`, enforced in code |
+| D-064 | `value_at_origin` is a feature | the feature set may not be weaker than the baseline |
+| D-065 | Flat feature matrices, not nested windows | every temporal invariant is directly assertable |
+| D-066 | Split-dependent features are made at fit time, never stored | a dataset must be reusable under another split |
+| D-067 | MAE/RMSE in kW, sMAPE, **no MAPE**, plus energy metrics | no composite score is produced |
+| D-068 | Regimes are **measured**, never assumed | the premise for Phase 7 is evidence, not faith |
+| D-069 | One fixed seed; **no significance claims** | determinism is tested, statistics are not invented |
+| D-070 | Registry committed; artifacts regenerable | re-running replaces a record, never duplicates it |
 
 ---
 
-## 5. Constraints in force
+## 6. Requirements and constraints in force
 
-1. No AI, MoE, optimizer, digital twin, red-team engine, MLOps agent, Jenkins or UI.
-2. UI is the **last** phase.
-3. Do not commit `paper/`, `research/` or `*.tex` (D-020).
-4. No databases, cloud services, APIs, queues, Docker, Kubernetes, vector
-   databases or LLM APIs without a recorded decision.
-5. `UNKNOWN` and `TBD` are the correct answers when undecided.
-6. Optimizer choice must follow the Phase 2 constraint set, not precede it.
-7. Regime definitions for the MoE remain hypotheses; do not hard-code.
-8. Agents are orchestration; the MoE is the learned model. Never conflate.
-9. Constraints are declared, not enforced, until Phase 10.
-10. Objectives carry **no weight** until Phase 10 records a decision.
+1. **Still no custom model.** No Energy World Model, no Qwen download or fine-tuning,
+   no Energy-MoE, no experts, no routing, no optimiser, no digital twin, no red-team
+   agent, no MLOps, no Jenkins, no UI. The only networks in this phase are two
+   conventional baselines.
+2. **No invented data.** Where SMART-DS has no series, the target is `UNSUPPORTED`
+   and the runner refuses it by name.
+3. `UNKNOWN` / `PARTIALLY_SUPPORTED` / `n/a` are correct answers; a number is not
+   better than an honest absence.
+4. The Phase 3 balance failure stays visible: 20.4506 kW, 0.5 kW tolerance unchanged.
+5. **No leakage.** No shuffled split, no feature reading at or after its target, no
+   weather forecast invented, no scaler fitted on test data.
+6. One seed; **no claim of statistical significance from a single run.**
+7. Do not commit `paper/`, `research/`, `*.tex`, the 228.5 MiB raw dataset, model
+   checkpoints, or the ML dataset arrays.
+8. Every dependency and every domain-model change needs a decision entry.
 
 ---
 
-## 6. Tests and commands actually run
+## 7. Testing and verification
 
-Every result below was observed in this session on Windows, Python 3.12.5.
+Every figure below was produced in this session on Windows, Python 3.12.5, 16 threads.
 
 ```powershell
 uv run pytest
-  → 492 passed in 3.39s        (160 Phase 1 + 332 Phase 2)
+  → 737 passed in 113 s          (was 584 after Phase 3; 153 Phase 4 tests added)
 
 uv run pytest --cov
-  → 492 passed, 90% total statement coverage (2528 statements)
-```
+  → 89% total statement coverage (5618 statements)
 
-| Module | Coverage | | Module | Coverage |
-|---|---|---|---|---|
-| `domain/enums.py` | 100% | | `domain/system.py` | 94% |
-| `domain/errors.py` | 100% | | `domain/uncertainty.py` | 94% |
-| `domain/identifiers.py` | 100% | | `domain/timebase.py` | 95% |
-| `domain/quality.py` | 100% | | `domain/constraints.py` | 82% |
-| `domain/quantities.py` | 98% | | `domain/forecasts.py` | 82% |
-| `domain/provenance.py` | 98% | | `domain/actions.py` | 81% |
-| `domain/__init__.py` | 100% | | `domain/observations.py` | 81% |
-| `domain/topology.py` | 85% | | `domain/assets.py` | 77% |
-| `domain/state.py` | 94% | | `domain/serialization.py` | 87% |
-| `domain/objectives.py` | 84% | | `config/domain.py` | 94% |
-
-```powershell
 uv run python -m energy_intelligence health
-  → 7 passed, 0 warning(s), 0 failed - HEALTHY   (exit code 0)
+  → 7 passed, 0 warning(s), 0 failed - HEALTHY   (exit 0)
 
-uv run python -m energy_intelligence domain validate
-  → domain configuration valid (fingerprint=bb629a69b881)   (exit 0)
+uv run python -m energy_intelligence ml targets
+  → 7 targets, 3 usable, 4 UNSUPPORTED with evidence
 
-uv run python -m energy_intelligence domain --domain-config configs/nope.toml validate
-  → exit 1
+uv run python -m energy_intelligence ml run
+  → exit 0; dataset ds-16ff1dabe80b; 1,309,440 samples; 15 registry records
+    total_seconds 2203.0   (dataset 8.6 s; the rest is model training)
 
-uv run python -m energy_intelligence domain vocabulary
-  → exit 0, full vocabulary as JSON derived from the enums at runtime
+uv run python -m energy_intelligence ml --ml-config configs/ml_pv_nowcast.toml run
+  → exit 0; dataset ds-d381ee913098; 33,021 samples
+
+uv run python -m energy_intelligence ml --ml-config configs/ml_pv_horizon.toml run
+  → exit 0; dataset ds-77f04fd46328; 32,736 samples; ramp metric present at h=1
+
+uv run pytest tests/ml -q --deselect <the 6 real-data tests>
+  → 145 passed  (clean-checkout path, no dataset required)
 ```
 
-```text
-[PASS] python_version        Python 3.12.5 (.venv\Scripts\python.exe)
-[PASS] package_import        energy_intelligence 0.1.0 from src/energy_intelligence
-[PASS] config                experiment=phase1-baseline seed=42 device=cpu log_level=INFO
-[PASS] directories           all 8 directories present
-[PASS] test_infrastructure   pytest 9.1.1, 11 test module(s) in tests/
-[PASS] domain_config         sys-phase2-reference topology=feeder 15min x 96 steps
-                             (24h) anchor=smart-ds fingerprint=bb629a69b881
-[PASS] logging               JSON Lines log writable
-```
+The six real-data tests skip when `data/raw/smart_ds` is absent, exactly as Phase 3's
+do, so a clean checkout runs the whole suite.
 
-**Zero Phase 1 regressions.** Two Phase 1 tests were updated because a
-foundation was genuinely added (the seventh health check), not because behaviour
-weakened.
+### Measured cost
 
-### Defects found by tests during Phase 2, all fixed
+| Quantity | Value |
+|---|---|
+| Load dataset build (1.3M samples, 40 series) | 8.6 s |
+| Ridge, all 3 horizons | 0.5 s |
+| Histogram gradient boosting, all 3 horizons | 20.5 s |
+| Neural MLP, all 3 horizons | 389 s |
+| Neural GRU, all 3 horizons | 1233 s |
+| PV datasets (33k samples) | < 20 s each |
+| Full load experiment, 8 models | 2203 s |
+| Dataset arrays | 40 customers x 35,040 float32 per-unit = 5.4 MB per target matrix |
 
-Seven real bugs were caught by writing tests, not by inspection. Each is now
-regression-tested:
+Hardware: 16 logical cores, CPU only. No GPU is used or required.
 
-1. **`horizon_hours` returned 1440 instead of 24** — divided seconds by 60 rather
-   than 3600.
-2. **`UncertaintyEstimate` raised `AttributeError` instead of
-   `DomainValidationError`** when `kind` was a plain string; the error message
-   itself dereferenced `.value`.
-3. **`QualityFlag.STALE` did not block decision use** — a design gap. A stale SOC
-   reading is exactly the input that produces a confidently wrong dispatch.
-4. **`Battery.nameplate_duration_hours` was dead code** — it compared
-   `kWh != kW`, which is always true. Now uses a dimensionally-compatible pair
-   table and returns `None` otherwise.
-5. **The authority "lattice" fabricated a total order**, asserting that scheduling
-   authority implies authority to curtail. Replaced with an explicit sufficiency
-   set per action type. `AuthorityLevel` is a `StrEnum`, so `>=` on it would have
-   ordered members *alphabetically*.
-6. **`from_dict` dispatch decoded every asset as a `Node`** — an asset payload also
-   carries `node_id`, and the node check came first.
-7. **`Constraint` and `ObservationRecord` stored references as bare `str`** while
-   everything else used typed identifiers. Since `AssetId` is not a `str`
-   subclass, **every cross-reference silently failed to resolve.**
+### Test coverage of the risky parts
 
-A further latent crash was found by a test: `DemandState` raised `TypeError`
-instead of a validation error when a category value was non-numeric, because the
-sum reconciliation ran before type validation.
-
-Two implementation defects were also fixed during Phase 2 scaffolding: a missing
-`Unit.KILOVOLT` (distribution nominal voltage is naturally in kV) and an
-unreachable validation branch in the domain-config loader.
-
-Several *tests* were also wrong and were corrected rather than weakened — most
-notably an identifier test that used the wrong prefix for every identifier kind,
-and a set of assertions that contradicted the documented behaviour (fingerprint
-stability across checkouts, authority ordering, objective conflicts). In each case
-the code was right and the assertion was corrected; the one genuine design gap
-(STALE) was fixed in the code.
+| Property | Test |
+|---|---|
+| Cross-phase consistency | `test_feeder_extraction_matches_the_phase3_reconstruction` |
+| The leakage guard has teeth | `test_the_guard_catches_a_deliberately_leaking_feature` |
+| Weather withdrawn past 15 min | `test_weather_is_withdrawn_beyond_the_first_step` |
+| Windows never cross a boundary | `test_no_window_crosses_a_split_boundary` |
+| Scaler fitted on training only | `test_dataset_scaler_is_fitted_on_training_rows_only` |
+| Targets align with origin+horizon | `test_targets_are_the_values_at_origin_plus_horizon` |
+| Row layout correctness | `test_each_row_belongs_to_the_series_its_features_came_from` |
+| Seasonal offsets are exact | `test_seasonal_offsets_are_exact_not_approximate` |
+| sMAPE zero handling | `test_smape_treats_zero_over_zero_as_zero` |
+| Unsupported targets refused | `test_unsupported_target_is_refused_with_evidence` |
+| Experiment reproducibility | `test_experiment_is_reproducible`, `verify_reproducible` |
 
 ---
 
-## 7. Known issues and unfinished work
+## 8. Known issues and risks
 
-### Known issues (none blocking)
+| # | Issue | Severity |
+|---|---|---|
+| 1 | **No weather forecast**, so day-ahead PV is unforecastable (F-04) | **Critical** for Phase 5 renewable work |
+| 2 | **Feeder PV fleet underivable** — 20 irradiance shapes absent (G-03, M-04) | **Critical** for net load |
+| 3 | **Neural baseline fails at 24 h** (F-02) — untuned, so a bound not a ceiling | High |
+| 4 | Battery / EV / wind unsupported (M-07..M-09) | High for Phase 9 |
+| 5 | **One year of data only** — seasonal models cannot be validated across years (M-10) | High for Phase 5 |
+| 6 | **No holiday calendar** (M-11) — holidays hide inside the weekly pattern | Moderate, cheap to fix |
+| 7 | No per-node voltage/current/reactive time series (M-12) | Moderate for Phase 11 |
+| 8 | `availability = 1.0` assumed for all assets (M-13) | Moderate |
+| 9 | Result covers 40 of 1,871 customers (D-062) | Moderate |
+| 10 | `load_data/*.parquet` end-use detail not acquired (M-14) | Moderate, cheap to fix |
+| 11 | Regime ratio unstable for near-zero-error rules (F-03 caveat) | Low, documented |
+| 12 | GRU costs 1233 s for no gain | Low |
+| 13 | No linter/type checker configured | Low |
+| 14 | Branch is `master` | Low |
 
-* **Coverage is 90%, not higher.** The uncovered lines are defensive type guards
-  (e.g. rejecting a `str` where a `NodeId` is required) and error branches in
-  `assets.py` (77%) and `actions.py` (81%). Acceptable for Phase 2; raise the bar
-  when Phase 3 adds logic rather than schema.
-* **No type checker or linter configured.** Deliberate (D-005) to keep the
-  dependency set minimal. The code is fully annotated, so adding `ruff` and `mypy`
-  before Phase 6 is cheap and is recommended.
-* **Git branch is `master`.** Left at the git default rather than renaming
-  silently. Decide before the first push.
-* **Constraint and objective unit mapping is partly placeholder.** `energy_cost`,
-  `battery_degradation` and `emissions` use `Unit.COUNT` because a tariff model
-  and grid emission factors are Phase 3 concerns.
-* **`Constraint.is_enforceable_in_phase_2` is a constant `False`.** Intentional —
-  it exists so nothing implies enforcement that does not exist. It will need real
-  behaviour in Phase 10.
-
-### Deliberately not done in Phase 2
-
-No optimizer, no digital twin, no red team, no decision assurance, no agents, no
-MLOps, no Jenkins, no UI, no training, no Qwen download, no dataset download, no
-database. See D-019 and D-030.
-
-### Open items carried forward
-
-* Add `paper/`, `research/`, `*.tex` ignore rules **when** such a directory is
-  first created (D-020).
-* Record how model checkpoints and datasets will be versioned (D-016).
-* Make `SourceReference.checksum` mandatory in Phase 3 (D-032).
-* Decide the git branch name before the first remote push.
+**Not carried forward as a blocker:** the Phase 3 balance residual is orthogonal to
+every ML task here (F-07).
 
 ---
 
-## 8. Next phase
+## 9. Unfinished work
 
-### Phase 3 — Dataset ingestion + preprocessing
+Phase 4 deliberately did not implement: any custom model, Qwen, the Energy-MoE, an
+optimiser, a digital twin, red-team agents, MLOps, Jenkins or a UI.
 
-Phase 3 is where the Phase 2 contract must prove it is representable. The first
-genuine risk in the project is **abstraction drift**: a domain model that no real
-data can satisfy. Phase 2 mitigated that with the SMART-DS representability anchor
-(D-038); Phase 3 must close the loop.
+Cheap, high-value follow-ups identified but not done:
 
-### Recommended Phase 3 deliverables
-
-1. **Select and fetch the dataset.** SMART-DS is the anchor (D-038). Record the
-   exact sub-region, feeders and scenario. Note its stated limitation: timeseries
-   battery dispatch is not included, so dispatch must be derived from state of
-   charge.
-2. **Verify representability.** Instantiate a real `EnergySystem` from the fetched
-   data and assert per-node power balance closes. This is the first true test of
-   D-022/D-023 and the first time the 0.5 kW tolerance is checked against reality.
-3. **Make `SourceReference.checksum` mandatory** and populate provenance for every
-   ingested record (D-032).
-4. **Create `src/energy_intelligence/data/`** — the one domain-adjacent package
-   the brief's conceptual structure lists that Phase 2 deliberately did not create
-   (D-015). Ingestion and preprocessing only; no features for a model yet.
-5. **Implement genuine data-quality detection** for the flags the model can now
-   carry — in particular **staleness**, which SAT-SA lacks entirely (D-029).
-   Freshness and range validity first; outlier and sensor-error detection can
-   follow.
-6. **Resample to the configured 15-minute grid**, honouring
-   `TimeBase.aggregate_to_hourly()`. Reject rather than silently round
-   off-grid timestamps.
-7. **Record every dependency with the D-004/D-005 justification format.** Expect
-   the first genuine third-party dependencies to appear here (dataframes,
-   possibly a Parquet reader).
-8. **Add `paper/`, `research/`, `*.tex` ignore rules** if such a directory is
-   created (D-020).
-
-Phase 4 should not begin until Phase 3 can produce a validated, provenance-tagged
-dataset that instantiates the Phase 2 contract.
+1. **Acquire `load_data/*.parquet`** (34 columns of end-use breakdown: heating,
+   cooling, lighting, motors). Highest-value cheap acquisition available.
+2. **Acquire a holiday calendar** for the region as a legitimate external input.
+3. **Decide the wind scope question** — SMART-DS has no wind, so either drop it or
+   source a second dataset. This should be an explicit decision, not a drift.
+4. **Widen the customer sample** from 40 to all 1,871 and re-measure.
 
 ---
 
-## 9. Critical context for the next session
+## 10. Next subphase
 
-1. **Still no AI.** Do not write code, docs or tests implying otherwise.
-   `README.md`, `decisions.md` (D-019) and the package docstring all state this,
-   and must be updated the moment it stops being true.
+### Phase 4 follow-up (cheap, do before Phase 5)
 
-2. **Read `decisions.md` before changing anything.** 39 decisions with
-   alternatives and consequences. Several have regression tests that fail if the
-   decision is reversed without a new entry — reversing D-004 breaks
-   `test_runtime_dependencies_are_empty`.
+1. Acquire the end-use parquet data and the holiday calendar.
+2. Decide the wind scope explicitly (D-0xx).
+3. Optionally re-run the load experiment with more seeds, before anyone claims a
+   difference is significant.
 
-3. **Constraints are declared, not enforced** (D-030). Do not "helpfully" implement
-   enforcement in Phase 3; that is Phase 10 and requires the optimizer decision.
+### Phase 5 — Energy World Model
 
-4. **Objectives have no `weight` field** (D-031), asserted by
-   `test_objective_has_no_weight_field`. Adding one is a recorded decision, not an
-   incidental edit.
+Phase 4 tells Phase 5 what it can and cannot learn from this data:
 
-5. **Never rank `AuthorityLevel`** (D-028). It is a `StrEnum`, so `>=` orders
-   members alphabetically. Use `sufficient_authorities_for(action_type)` membership.
+- **It will be a demand world model.** That is the only target this dataset supports
+  well, and the measured baselines to beat are 0.4043 kW at 15 minutes and 1.5648 kW
+  at 24 hours.
+- **Do not attempt feeder PV or net load on this dataset.** The inputs do not exist
+  (M-04, M-06). Attempting it means inventing data, which is the one thing this
+  project has refused at every step so far.
+- **Regime structure is real** (F-03) — high-demand, high-ramp and PV-ramp regimes
+  carry an order of magnitude more error. A world model with a regime-aware
+  representation is the first architecture change the evidence supports.
+- **The hard series are high-volatility residential customers**, not large ones:
+  `load_p1ulv6662` (54 kW rated, 11 kW mean, load factor 0.21, per-unit std 0.12) has
+  7x the MAE of the median series and accounts for the worst rows, all in November and
+  December evenings.
+- **PV without a weather forecast is a dead end.** If Phase 5 wants renewable
+  forecasting, the first action is a weather-forecast source, not a model.
 
-6. **Never compare units for equality across dimensions** (D-039). `kWh` is never
-   equal to `kW`; use the dimensionally-compatible pair table.
+**Baseline to beat, before anything else:** `classical_hist_gbm` at MAE 0.4242 kW
+(15 min), 0.8579 kW (1 h), 1.5648 kW (24 h), on the chronological test split of
+dataset `ds-16ff1dabe80b`.
 
-7. **Use typed identifiers for every cross-reference** (D-027). A bare `str` will
-   silently fail to resolve against an `AssetId`.
+---
 
-8. **Add a config field in both config systems as needed**, remembering
-   `AppConfig` (a run) and `DomainConfig` (the environment) are separate (D-037).
-   TOML gotcha: a key written after a `[table]` header belongs to that table.
+## 11. Critical context
 
-9. **Domain subpackages still absent:** `forecasting/`, `moe/`, `optimization/`,
-   `simulation/`, `agents/`, `mlops/`, `data/`. Create one when implementing it.
+1. **The baselines exist to be beaten, and beating them is now cheap.** A future claim
+   of "our model is better" must state which baseline, which horizon, which split,
+   and which dataset version.
 
-10. **Reuse, do not reinvent:** layout is `ProjectPaths`; logging is
-    `initialize_logging()` / `get_logger()`; validation is a frozen
-    `__post_init__` raising `DomainValidationError` with **all** errors; handover
-    between phases is `encode()`/`decode()`.
+2. **A neural network is not obviously justified on this data.** That is a finding,
+   not a failure. It was recorded rather than tuned away, and if Phase 5 wants to
+   justify an Energy World Model it must justify it against gradient boosting, not
+   against persistence.
 
-11. **Verify before claiming.** Run `uv run pytest` and
-    `uv run python -m energy_intelligence health` and report real output. Never
-    state something passes without having run it.
+3. **Read `decisions.md` before changing anything.** D-055 … D-070 carry
+   alternatives and consequences, and several have tests that fail if reversed without
+   a new entry.
 
-12. **Git hygiene.** Commits are authored solely as
-    `PrathamKapoor <prathamkapoor027@gmail.com>`. No `Co-Authored-By`, no AI or
-    tool attribution of any kind, in commit messages, PRs, tags or release notes.
-    Never add Claude or any bot as a collaborator. Do not commit `paper/`,
-    `research/` or `*.tex`.
+4. **The two self-inflicted bugs (F-06) are the most important lesson of the phase.**
+   An internally consistent pipeline was entirely wrong, and the only thing that
+   caught it was a cross-check against an independent implementation and a "why is
+   this worse than the mean?" question. Keep asking both.
 
-13. **Undecided means `TBD`.** If something is not yet decided, write `TBD` or
-    `UNKNOWN`. Do not silently choose a technology because it is familiar. Every
-    reasonable choice needs a `decisions.md` entry stating the alternatives, the
-    selection, the reason and the consequence.
+5. **Watch the units.** The dataset stores per-unit values; metrics are reported in
+   kW. `mae` and `mae_per_unit` are both in the comparison JSON, and a per-unit MAE
+   silently reported as kW would be wrong by two orders of magnitude.
+
+6. **`ml run` takes about 37 minutes on CPU**, dominated by the two neural baselines.
+   Use `ml dataset` for dataset-only work and `ml --ml-config ... run` for the PV
+   variants, which take seconds.
+
+7. **Verify before claiming.** Run `uv run pytest` and `energy-intel health` and
+   report real output. Note that `energy-intel data validate` exits **1** by design —
+   that is the honest Phase 3 balance result, not a crash.
+
+8. **Git hygiene.** Commits authored solely as
+   `PrathamKapoor <prathamkapoor027@gmail.com>`. No `Co-Authored-By`, no AI or tool
+   attribution anywhere. Never add Claude or any bot as a collaborator. Do not commit
+   `paper/`, `research/`, `*.tex`, the raw dataset, or `artifacts/`.
+
+9. **Undecided means `TBD`.** Every reasonable choice needs a `decisions.md` entry
+   stating alternatives, selection, reason and consequence.
+
+---
+
+## 12. Agent instructions
+
+If you are an automated agent continuing this project:
+
+- **Do not fabricate energy data.** The single hardest-won property of this codebase
+  is that every number is traceable to a real file. Four targets are `UNSUPPORTED`
+  precisely because the alternative was inventing them.
+- **Do not relax a tolerance, a split or a leakage guard to make a metric look
+  better.** The 0.5 kW balance criterion fails on purpose; the chronological split and
+  the weather withdrawal exist for the same reason.
+- **Before adding a dependency, add a decision.** `tests/test_package.py` asserts the
+  exact set and will fail.
+- **Before changing `domain/`, add a decision and a test.** The Phase 4 rule is that
+  the domain layer must import no ML library; a test enforces it.
+- **When you change a feature, target, lookback, horizon, split, stride or
+  normalisation, the dataset version changes automatically.** Do not overwrite a
+  previous version; produce a new one.
+- **Run `uv run pytest` before claiming anything is finished.** 737 tests, ~2 minutes.

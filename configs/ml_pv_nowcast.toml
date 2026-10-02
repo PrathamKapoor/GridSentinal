@@ -1,0 +1,42 @@
+# Phase 4 experiment: PV generation, 15-minute nowcast.
+#
+# A separate file from configs/ml.toml on purpose. This target has real weather
+# covariates, and whether those may be used depends entirely on the horizon, so the
+# experiment shape IS the scientific question here.
+#
+# Unknown keys are REJECTED (D-007).
+
+# The one shipped 1000 kW array. PARTIALLY_SUPPORTED: it is NOT the feeder's PV
+# fleet, whose 20 irradiance loadshapes are absent from the dataset (G-03).
+target = "pv_generation"
+label = "pv-nowcast"
+
+# 15 minutes only. Weather observations are legitimate at the origin and for one
+# step beyond it; at any longer horizon a real deployment would need a weather
+# FORECAST, which SMART-DS does not contain, so the weather features are withdrawn
+# automatically (D-063). Keeping the horizon at 1 is what makes this a nowcast.
+lookback_steps = 672
+horizons = [1]
+
+train_fraction = 0.70
+validation_fraction = 0.15
+origin_stride = 1
+
+# Not used by this target; present because one schema covers every experiment.
+customer_count = 40
+commercial_fraction = 0.25
+
+# Real weather observations from the same file: GHI, PoA irradiance, temperature,
+# wind speed. They are withdrawn automatically if any horizon exceeds 15 minutes.
+include_weather = true
+
+seed = 20260101
+torch_threads = 4
+models = [
+    "naive_last_value",
+    "naive_seasonal_day",
+    "naive_seasonal_week",
+    "classical_ridge",
+    "classical_hist_gbm",
+    "neural_mlp",
+]

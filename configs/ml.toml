@@ -1,0 +1,101 @@
+# Phase 4 experiment shape.
+#
+# Fourth configuration file, alongside:
+#   configs/default.toml  a RUN        (seed, device, paths, logging)
+#   configs/domain.toml   the DOMAIN   (time base, system boundary)
+#   configs/data.toml     the DATASET  (which SMART-DS subset is downloaded)
+#   configs/ml.toml       the EXPERIMENT (this file: target, lookback, horizon, split)
+#
+# The dataset selection is a fact about what was downloaded. The lookback and
+# horizon are choices about a question. They change for different reasons, so they
+# live in different files (decisions.md D-059).
+#
+# Unknown keys are REJECTED (D-007).
+
+# ---------------------------------------------------------------------------
+# Target
+# ---------------------------------------------------------------------------
+# One of the ids declared in ml/targets.py. Only SUPPORTED or
+# PARTIALLY_SUPPORTED targets may be used; UNSUPPORTED targets are refused by the
+# runner rather than silently skipped.
+#
+# customer_load -> per-customer demand, SUPPORTED
+# feeder_load   -> feeder total demand, SUPPORTED
+# pv_generation -> realised output of the one shipped 1000 kW array,
+#                  PARTIALLY_SUPPORTED (G-03: the feeder's own PV fleet cannot be
+#                  reconstructed because its irradiance shapes are absent)
+target = "customer_load"
+
+# Artifact directory label under artifacts/ml/. Keep it short and stable so report
+# paths are predictable.
+label = "load-40"
+
+# ---------------------------------------------------------------------------
+# Temporal shape
+# ---------------------------------------------------------------------------
+# Lookback in 15-minute steps. 672 steps = 7 days, which is the shortest window
+# that contains a full weekly cycle; it is the only lookback that lets a model see
+# "same time last week", the strongest single seasonal reference in this data
+# (decisions.md D-060).
+lookback_steps = 672
+
+# Forecast horizons in 15-minute steps:
+#   1  = 15 minutes
+#   4  = 1 hour
+#   96 = 24 hours
+# 1 and 4 are deliberately NOT consecutive, so the ramp metric is reported as n/a
+# for them; add a consecutive pair (e.g. 4 and 8) if ramp error is needed.
+horizons = [1, 4, 96]
+
+# Chronological split by grid index. Never shuffled (decisions.md D-061).
+train_fraction = 0.70
+validation_fraction = 0.15
+
+# Keep every Nth origin. 1 uses every 15-minute origin. Larger values cut dataset
+# size proportionally without touching the temporal order. The first full run used
+# 1, because the data fits comfortably (decisions.md D-062).
+origin_stride = 1
+
+# ---------------------------------------------------------------------------
+# Series selection
+# ---------------------------------------------------------------------------
+# How many customers to include, sampled stratified by class and rated-power
+# decile with the seed below. All 1,871 customers would be 65.6M values, which is a
+# scale problem rather than a baseline problem (decisions.md D-058).
+customer_count = 40
+
+# Share of the sample that must be commercial. The feeder is 34 commercial and
+# 1,837 residential customers, so 0.25 deliberately over-samples the minority
+# class instead of reproducing the population.
+commercial_fraction = 0.25
+
+# ---------------------------------------------------------------------------
+# Features
+# ---------------------------------------------------------------------------
+# Use the real weather observations shipped alongside the solar file. They are
+# automatically WITHDRAWN when any horizon exceeds 15 minutes, because the dataset
+# contains no weather forecast and an actual future observation would be leakage
+# (decisions.md D-063). Leave false for the load task, which has no weather.
+include_weather = false
+
+# ---------------------------------------------------------------------------
+# Reproducibility
+# ---------------------------------------------------------------------------
+# One fixed seed. No multi-seed significance claims are made from a single run
+# (decisions.md D-064).
+seed = 20260101
+
+# Torch CPU threads. Recorded in the registry because it changes runtime.
+torch_threads = 4
+
+# Baselines to evaluate, in comparison-table order: naive, classical, neural.
+models = [
+    "naive_last_value",
+    "naive_seasonal_day",
+    "naive_seasonal_week",
+    "naive_drift",
+    "classical_ridge",
+    "classical_hist_gbm",
+    "neural_mlp",
+    "neural_gru",
+]

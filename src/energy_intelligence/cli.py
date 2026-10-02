@@ -31,6 +31,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from .config import ConfigError, load_config
 from .health import check_health, render_report
@@ -131,6 +132,84 @@ def build_parser() -> argparse.ArgumentParser:
     domain_subparsers.add_parser(
         "vocabulary",
         help="Print the energy-domain vocabulary (asset types, roles, constraints, objectives).",
+    )
+
+    data_parser = subparsers.add_parser(
+        "data", help="Inspect, ingest and validate external energy data."
+    )
+    data_parser.add_argument(
+        "--data-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Dataset config file. Defaults to configs/data.toml.",
+    )
+    data_parser.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help="Directory to write JSON artifacts into. Defaults to artifacts/data.",
+    )
+    data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
+    data_subparsers.add_parser(
+        "config", help="Print the resolved dataset selection."
+    )
+    data_subparsers.add_parser(
+        "inspect",
+        help="Discover schema and report assets, time and data quality without mapping.",
+    )
+    data_subparsers.add_parser(
+        "ingest",
+        help="Run the full pipeline: manifest, schema, quality, mapping, balance.",
+    )
+    data_subparsers.add_parser(
+        "validate",
+        help="Run the pipeline and report the energy balance result.",
+    )
+    data_subparsers.add_parser(
+        "mapping",
+        help="Print the SMART-DS to domain field mapping.",
+    )
+    data_subparsers.add_parser(
+        "manifest",
+        help="Print the dataset manifest including per-file checksums.",
+    )
+
+    ml_parser = subparsers.add_parser(
+        "ml",
+        help="Build the ML dataset and run baseline forecasting experiments.",
+    )
+    ml_parser.add_argument(
+        "--ml-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Experiment config file. Defaults to configs/ml.toml.",
+    )
+    ml_subparsers = ml_parser.add_subparsers(dest="ml_command", required=True)
+    ml_subparsers.add_parser(
+        "config", help="Print the resolved experiment configuration."
+    )
+    ml_subparsers.add_parser(
+        "targets",
+        help="List every forecasting target with its measured support status.",
+    )
+    ml_subparsers.add_parser(
+        "features",
+        help="Print the feature catalogue with availability and leakage policy.",
+    )
+    ml_subparsers.add_parser(
+        "dataset",
+        help="Build the ML dataset and write its manifest, without training.",
+    )
+    ml_subparsers.add_parser(
+        "run",
+        help="Build the dataset, run every baseline, analyse and record results.",
+    )
+    ml_subparsers.add_parser(
+        "experiments",
+        help="Print the experiment registry.",
     )
 
     subparsers.add_parser("init-dirs", help="Create the standard directory layout.")
@@ -257,6 +336,196 @@ def _domain_vocabulary() -> dict[str, object]:
     }
 
 
+def _layout_from_config(data_config_path: str | None):
+    """Resolve the dataset selection into a :class:`SmartDsLayout`."""
+    from .config.data import load_data_config
+    from .data.smartds import SmartDsLayout
+
+    data_config = load_data_config(data_config_path)
+    layout = SmartDsLayout(
+        root=data_config.raw_root,
+        version=data_config.version,
+        year=data_config.year,
+        region=data_config.region,
+        subregion=data_config.subregion,
+        scenario=data_config.scenario,
+        substation=data_config.substation,
+        feeder=data_config.feeder,
+    )
+    return data_config, layout
+
+
+def _artifact_dir(out: str | None):
+    from .paths import ProjectPaths
+
+    base = Path(out) if out else ProjectPaths.from_root().artifacts / "data"
+    if not base.is_absolute():
+        base = ProjectPaths.from_root().root / base
+    return base
+
+
+def _write_json(directory: Path, name: str, payload: object) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8"
+    )
+    return path
+
+
+def _command_data(args: argparse.Namespace) -> int:
+    from .data.smartds import SmartDsAdapter, mapping_table, run_ingestion
+
+    if args.data_command == "mapping":
+        print(json.dumps(list(mapping_table()), indent=2))
+        return _EXIT_OK
+
+    data_config, layout = _layout_from_config(args.data_config)
+
+    if args.data_command == "config":
+        print(json.dumps(data_config.as_dict(), indent=2))
+        return _EXIT_OK
+
+    if not layout.profiles_dir.is_dir():
+        print(
+            f"dataset not acquired: {layout.profiles_dir} does not exist. "
+            "See docs/smart_ds_acquisition.md for the authoritative URL.",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+
+    if args.data_command == "inspect":
+        adapter = SmartDsAdapter(layout)
+        schema = adapter.schema()
+        payload = {
+            "layout": layout.describe(),
+            "schema": schema.to_dict(),
+            "quality": adapter.quality_report().to_dict(),
+            "der_assets": {
+                "solar_count": adapter.der_assets().solar_count,
+                "battery_count": adapter.der_assets().battery_count,
+                "ev_sites": adapter.der_assets().ev_sites,
+            },
+        }
+        print(json.dumps(payload, indent=2, default=str))
+        return _EXIT_OK
+
+    result = run_ingestion(layout, peak_only=data_config.peak_only)
+    directory = _artifact_dir(args.out)
+
+    if args.data_command == "manifest":
+        print(result.manifest.summary_line())
+        path = _write_json(directory, "manifest.json", result.manifest.to_dict())
+        print(f"written: {path}")
+        return _EXIT_OK
+
+    if args.data_command == "validate":
+        print(result.balance.render())
+        path = _write_json(directory, "balance_report.json", result.balance.to_dict())
+        print(f"\nwritten: {path}")
+        # A failing balance is a legitimate, reportable outcome, not a crash.
+        return _EXIT_OK if result.balance.passed else 1
+
+    # ingest
+    from .domain.serialization import encode, to_dict
+
+    mapping_payload = result.mapping.to_dict()
+    mapping_payload["observations"] = [
+        to_dict(observation) for observation in result.mapping_result.observations
+    ]
+    written = [
+        _write_json(directory, "manifest.json", result.manifest.to_dict()),
+        _write_json(directory, "schema_report.json", result.schema),
+        _write_json(directory, "quality_report.json", result.quality),
+        _write_json(directory, "balance_report.json", result.balance.to_dict()),
+        _write_json(directory, "reconstruction.json", result.reconstruction),
+        _write_json(directory, "mapping_report.json", mapping_payload),
+    ]
+
+    system_path = _write_json(
+        directory, "energy_system.json", json.loads(encode(result.mapping_result.system))
+    )
+    written.append(system_path)
+
+    print(result.manifest.summary_line())
+    print()
+    print("reconstruction at the evaluated timepoint:")
+    for key, value in result.reconstruction.items():
+        print(f"  {key}: {value}")
+    print()
+    print(f"balance: {'PASS' if result.balance.passed else 'FAIL'} "
+          f"(max |residual| = {result.balance.max_absolute_residual_kw:.4f} kW, "
+          f"tolerance {result.balance.tolerance_kw} kW)")
+    print()
+    print("artifacts written:")
+    for path in written:
+        print(f"  {path}")
+    return _EXIT_OK
+
+
+def _command_ml(args: argparse.Namespace) -> int:
+    """Phase 4: dataset construction and baseline forecasting.
+
+    Sub-commands
+    ------------
+    ``config``      resolved experiment configuration
+    ``targets``     every forecasting candidate and its support status
+    ``features``    the feature catalogue and the leakage policy
+    ``dataset``     build and persist the dataset without training
+    ``run``         full experiment: dataset, baselines, analysis, registry
+    ``experiments`` the recorded registry
+    """
+    from .config.ml import load_ml_config
+
+    if args.ml_command == "config":
+        print(json.dumps(load_ml_config(args.ml_config).to_dict(), indent=2))
+        return _EXIT_OK
+
+    if args.ml_command == "targets":
+        from .ml.targets import TARGET_REGISTRY
+
+        payload = {
+            "targets": [spec.to_dict() for spec in TARGET_REGISTRY],
+            "supported": [
+                spec.target_id
+                for spec in TARGET_REGISTRY
+                if spec.status != "UNSUPPORTED"
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        return _EXIT_OK
+
+    if args.ml_command == "features":
+        from .ml.features import feature_catalogue
+
+        print(json.dumps([spec.to_dict() for spec in feature_catalogue()], indent=2))
+        return _EXIT_OK
+
+    config = load_ml_config(args.ml_config)
+
+    if args.ml_command == "experiments":
+        from .ml.registry import read_records
+
+        records = read_records(ProjectPaths.from_root().experiments / REGISTRY_FILENAME)
+        print(json.dumps([record.to_dict() for record in records], indent=2))
+        return _EXIT_OK
+
+    from .ml.pipeline import run_ml_pipeline
+
+    try:
+        output = run_ml_pipeline(config, train=(args.ml_command == "run"))
+    except FileNotFoundError as exc:
+        print(f"{exc}", file=sys.stderr)
+        print(
+            "the SMART-DS dataset must be acquired first; see docs/smart_ds_acquisition.md",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+
+    print(output.render())
+    return _EXIT_OK
+
+
 def _command_init_dirs() -> int:
     created = ProjectPaths.from_root().ensure()
     if created:
@@ -304,6 +573,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _command_config(args)
             case "domain":
                 return _command_domain(args)
+            case "data":
+                return _command_data(args)
+            case "ml":
+                return _command_ml(args)
             case "init-dirs":
                 return _command_init_dirs()
             case "paths":

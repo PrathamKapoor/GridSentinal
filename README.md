@@ -15,26 +15,25 @@ OBSERVE → UNDERSTAND → PREDICT → GENERATE OPTIONS → ATTACK OPTIONS
 
 ---
 
-## Current status: Phase 2 of 20 — ENERGY SYSTEM DEFINITION + DATA MODEL
+## Current status: Phase 4 of 20 — ML-READY DATASET + BASELINE FORECASTING
 
-**Phase 1 (foundation) is complete. Phase 2 (the energy contract) is complete.
-There is still no AI.** No model, no mixture-of-experts, no optimizer, no digital
-twin, no red-team engine, no MLOps agent and no UI exist. Those belong to later
-phases.
+**Phases 1-3 complete. Phase 4 complete. The first ML phase is done — and the
+baselines are measured, not promised.** No Energy World Model, no Qwen, no
+Energy-MoE, no optimiser, no digital twin, no agent, no UI exists yet, by design.
 
 | Phase | Capability | Status |
 |---|---|---|
-| 1 | Foundation / scaffolding | **Complete** — config, logging, CLI, health check, tests |
-| 2 | Energy-system definition + data model | **Complete** — the formal contract below |
-| 3 | Dataset ingestion + preprocessing | Not started |
-| 4 | Baseline forecasting models | Not started |
-| 5 | Energy World Model | Not started |
+| 1 | Foundation / scaffolding | **Complete** |
+| 2 | Energy-system definition + data model | **Complete** |
+| 3 | Dataset ingestion, normalization, reality validation | **Complete — PARTIAL fidelity** |
+| 4 | ML dataset + naive/classical/neural baselines | **Complete — measured** |
+| 5 | Energy World Model | Not started — informed by Phase 4 findings |
 | 6 | Qwen3-1.7B domain specialization | Not started |
-| 7 | Energy-MoE | Not started |
+| 7 | Energy-MoE | Not started — regime evidence now exists |
 | 8 | Uncertainty estimation | Container only; method TBD |
-| 9 | Flexibility modelling | Representation only; method TBD |
+| 9 | Flexibility modelling | Representation only; **battery dispatch unavailable (G-01)** |
 | 10 | Optimization / decision engine | Not started |
-| 11 | Digital twin | Not started |
+| 11 | Digital twin | Not started; needs a loss model (G-06) and produced state |
 | 12 | Red team / adversarial scenarios | Not started |
 | 13 | Decision assurance + adaptive autonomy | Not started |
 | 14 | Energy-aware MLOps | Not started |
@@ -47,70 +46,113 @@ phases.
 
 ---
 
-## What energy system is modelled
+## The Phase 4 answer
 
-A **renewable-integrated distribution-level environment containing distributed
-energy resources**, connected to the utility grid at a point of common coupling.
+> Can real SMART-DS data become a temporally correct, leakage-free ML dataset, and
+> how hard is forecasting before any custom model exists?
 
-```text
-                        UTILITY GRID
-                             │
-                  DISTRIBUTION SYSTEM
-        ┌────────────────────┼────────────────────┐
-        ▼                    ▼                    ▼
-     DEMAND              RENEWABLES              DERs
-   ┌────┼────┐        ┌──────┴──────┐      ┌──────┴──────┐
-   ▼    ▼    ▼        ▼             ▼      ▼             ▼
-Residential Commercial Industrial  Solar   Wind       Battery
-                                                 │            │
-                                       Flexible      EV
-                                        Loads      chargers
-```
+**YES — and the baselines are now measured, so every future claim has something to
+beat.**
 
-Key choices (full rationale in `decisions.md`, D-022 … D-039):
+### What could be forecast at all
 
-| Question | Decision |
-|---|---|
-| Boundary | Renewable-integrated distribution-level DER environment (D-022) |
-| Topology | Node-granular and configurable; power flow deferred to Phase 11 (D-023) |
-| Time base | **15-minute** native timestep, **96-step** day-ahead horizon (D-024) |
-| Control | **Tiered per-asset authority**, carried on each action (D-028) |
-| Dataset anchor | **SMART-DS** as a representability anchor; model stays dataset-agnostic (D-038) |
+Of six candidate targets, three are real and four absences are recorded rather than
+filled:
 
-No bus count, feeder count, asset count or rating is hard-coded. A single lumped
-node and a large multi-feeder system use the same types.
+| Target | Status | Basis |
+|---|---|---|
+| Per-customer load | **SUPPORTED** | 1,871 customers x 35,040 points, no missing values |
+| Feeder load | **SUPPORTED** | sum over 3,690 Load objects |
+| PV generation | **PARTIALLY_SUPPORTED** | one real 1000 kW array; **not** the feeder's 1,216 PV (G-03) |
+| Net load, battery SOC/power, EV demand, wind | **UNSUPPORTED** | no series exists; see `docs/ml_data_gap_report.md` |
+
+### Measured baselines — test split, chronological, never shuffled
+
+Load task, 40 customers, 1,309,440 samples, MAE in kW:
+
+| Model | h=1 (15 min) | h=4 (1 h) | h=96 (24 h) | Train time |
+|---|---|---|---|---|
+| naive last value | **0.4043** | 0.8897 | 2.4343 | — |
+| naive seasonal (day) | 2.3367 | 2.3375 | 2.4343 | — |
+| naive seasonal (week) | 1.8673 | 1.8638 | 1.8306 | — |
+| classical ridge | 0.5193 | 1.0878 | 2.1920 | 0.5 s |
+| **classical hist GBM** | 0.4242 | **0.8579** | **1.5648** | 20.5 s |
+| neural MLP | 0.4638 | 0.9315 | 6.4850 | 389 s |
+| neural GRU | 0.5691 | 0.8976 | 2.2856 | 1233 s |
+
+PV task, 15-minute nowcast with real weather at the origin, MAE in kW on a 1000 kW
+array: **hist GBM 8.57** (0.86% of capacity), ridge 10.39, MLP 9.90, persistence
+13.58, seasonal-naive 79-85.
+
+### Six findings that change the plan
+
+1. **Persistence wins at 15 minutes.** Household load on a 15-minute grid is so
+   smooth that repeating the last value beats every fitted model. Machine learning
+   earns its keep only as the horizon grows.
+2. **Gradient boosting wins at 1 h and 24 h** (0.8579 and 1.5648 kW against
+   persistence's 0.8897 and 2.4343). Classical ML is the right default for this data.
+3. **The neural baseline does not beat classical here.** The MLP collapses at 24 hours
+   (6.485 kW, worse than persistence) and the GRU costs 3x the MLP's time for no gain.
+   Untrained-but-documented baselines, per D-056.
+4. **Regime structure is real, and measured.** Worst-to-best regime error ratios run
+   12.7-18.5 on the load task and 15.8 across solar phases. Error concentrates in
+   high-demand and high-ramp periods, and in the evening/morning PV ramps. This is
+   the first data-driven argument for regime-specialised modelling.
+5. **Day-ahead PV is a missing-input problem, not a modelling problem.** Without a
+   weather forecast, PV at 24 hours reaches MAE 74.3 kW against persistence's 79.6 kW
+   (R2 0.62) — barely better than doing nothing. With weather at the origin it is
+   8.57 kW. The dataset has no weather *forecast*, so Phase 4 refuses to use weather
+   beyond 15 minutes, structurally.
+6. **Percentage metrics are wrong for PV.** sMAPE reads 126% while MAE is 0.86% of
+   capacity, because 52.2% of the target is exactly zero. MAPE is never used.
+
+Full analysis: `artifacts/ml/*/reports/` and `docs/ml_data_gap_report.md`.
 
 ---
 
-## The domain contract
+## The Phase 3 answer---
 
-`src/energy_intelligence/domain/` defines the formal contract every later phase
-depends on. Nothing in it presumes a model, optimizer, simulator or agent exists.
+## The Phase 3 answer
 
-| Concern | Type | Key guarantee |
+> Can a real SMART-DS instance be transformed into our `EnergySystem` without
+> inventing information or silently changing its meaning?
+
+**YES, WITH EXPLICIT DERIVATIONS** — and with the balance criterion failing,
+reported rather than worked around.
+
+| Question | Answer | Evidence |
 |---|---|---|
-| Action vs observation | `VariableRole` | Enforced in both directions at construction |
-| Assets | `Asset` + 5 typed subclasses | Each subtype carries only its own fields |
-| Authority | `AuthorityLevel` | An advisory-only asset can never be dispatched |
-| Topology | `Node`, `NetworkElement`, `NetworkTopology` | All references resolve; boundary must be declared |
-| State | `EnergyState` | Per-node power balance enforced; `StateOrigin` mandatory |
-| Actions | `Action` | Role, unit, sign, duration and authority all validated |
-| Constraints | `Constraint` | Declared and bound to real assets; **never enforced in Phase 2** |
-| Objectives | `Objective` | Declared **with their conflicts**; **no weight field** |
-| Uncertainty | `UncertaintyEstimate` | Container ready; exactly one numeric summary; `UNKNOWN` legal |
-| Provenance | `Provenance` | Mandatory everywhere; cannot be constructed without a source |
-| Quality | `DataQuality` | Strict: any adverse flag blocks decision use |
+| **Dataset** | SMART-DS **v1.0**, AUS/P1U, 2018, `base_timeseries`, feeder `p1uhs0_1247--p1udt12703` | OEDI public S3 bucket; `SMART-DS_version.txt` = `1.0` |
+| **Provenance** | 359 files, 228.5 MiB, every file SHA-256'd | `docs/smart_ds_acquisition.md` |
+| **Time** | **Native 15-minute, 35,040 points** — matches the Phase 2 grid exactly, **no resampling** | Confirmed 3 independent ways |
+| **Assets** | 3,690 load objects / **1,871 individual customer assets**, 4,555 line edges, 5,196 nodes, 1,216 PV, 93 batteries | Real files |
+| **Topology** | Full node graph constructible from `Lines.dss` | Real `bus1`/`bus2` |
+| **Units** | Known and normalized; no inference from magnitude | User Guide + observed magnitudes |
+| **Quality** | Residential demand reconstructs to **8 decimal places**; commercial is **−20.45 kW** short | vs dataset's own published figures |
+| **Derivation** | 1 derivation: `P(t) = Σ kW_rating × profile_pu(t)` | Verified against published values |
+| **Battery** | Dispatch **UNAVAILABLE and not derivable**; usable energy and directional limits **UNKNOWN** | No SOC series; `kWhRated` is a nameplate only (D-050) |
+| **Domain mapping** | A real `EnergySystem` instantiates: `sys-smartds-aus-p1u` | 5,196 nodes, 1,871 real load assets, 2 observations, mandatory provenance |
+| **Balance** | **FAILS the 0.5 kW criterion** — 2 of 5 identities | Reported, tolerance unchanged |
 
-The **per-node power balance** is the one invariant Phase 2 enforces structurally:
+### Three findings that change the project plan
 
-```text
-generation_kw + storage_kw + grid_kw − load_kw + unaccounted_kw ≈ 0   (per node)
-```
+1. **Battery dispatch does not exist and cannot be derived** (G-01). Phase 2's
+   handoff said dispatch "may need to be derived from state of charge".
+   Verification shows that route is *also* unavailable — deriving power needs
+   SOC(t) and SOC(t+1), and SMART-DS supplies a single `kWhStored` scalar. No
+   battery flexibility can come from this dataset. This **corrects** the Phase 2
+   document.
 
-Two design choices are load-bearing and deliberately *not* implemented early:
-constraints are **declared but never enforced** (a formulation would prejudge the
-Phase 10 optimizer), and objectives are **never weighted** (choosing weights would
-hide the cost-versus-comfort trade-off inside an unauditable scalar).
+2. **Per-node power balance cannot be evaluated over time** (G-02). Grid
+   import/export is not provided as a time series, so there is nothing to close
+   against. Phase 11 must *produce* flows, not read them.
+
+3. **The 0.5 kW tolerance cannot close while network losses are unmodelled**
+   (G-06). Real feeders lose **3.2175 %** (501.67 kW at 15,090.72 kW). Phase 2
+   deferred physics, so this is a physics gap. The tolerance was **not**
+   adjusted.
+
+Full detail: `docs/gaps_report.md` — 12 gaps, with 4 fixable by better ingestion.
 
 ---
 
@@ -149,26 +191,51 @@ uv run python -m energy_intelligence config validate
 # Energy-domain configuration and contract (Phase 2)
 uv run python -m energy_intelligence domain validate
 uv run python -m energy_intelligence domain vocabulary
+
+# SMART-DS ingestion (Phase 3) - requires the dataset under data/raw/smart_ds
+uv run python -m energy_intelligence data inspect
+uv run python -m energy_intelligence data ingest
+uv run python -m energy_intelligence data validate   # exits 1: balance FAILS
+uv run python -m energy_intelligence data mapping
+
+# ML dataset and baselines (Phase 4) - requires the dataset under data/raw/smart_ds
+uv run python -m energy_intelligence ml targets      # what can be forecast, and why
+uv run python -m energy_intelligence ml features     # feature catalogue + leakage policy
+uv run python -m energy_intelligence ml dataset      # build the dataset, no training
+uv run python -m energy_intelligence ml run          # full experiment (~37 min, CPU)
+uv run python -m energy_intelligence ml experiments  # the recorded registry
+
+# the two PV experiments (see the configs for why they differ)
+uv run python -m energy_intelligence ml --ml-config configs/ml_pv_nowcast.toml run
+uv run python -m energy_intelligence ml --ml-config configs/ml_pv_horizon.toml run
 ```
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `energy-intel health` | Run every health check (Phase 1 + Phase 2) |
+| `energy-intel health` | Run every health check (Phases 1-3) |
 | `energy-intel health --json` | Same, machine-readable |
 | `energy-intel health --create-dirs` | Create missing directories first |
-| `energy-intel config show` | Print resolved run configuration as JSON |
-| `energy-intel config validate` | Validate run configuration, non-zero exit if invalid |
-| `energy-intel domain show` | Print resolved energy-domain configuration |
-| `energy-intel domain validate` | Validate the energy-domain configuration |
-| `energy-intel domain vocabulary` | Print the whole domain vocabulary from the enums |
-| `energy-intel init-dirs` | Create the standard directory layout |
-| `energy-intel paths` | Print the standard directory layout |
+| `energy-intel config show` / `validate` | Run configuration |
+| `energy-intel domain show` / `validate` | Energy-domain configuration |
+| `energy-intel domain vocabulary` | The whole domain vocabulary from the enums |
+| `energy-intel data config` | Resolved dataset selection |
+| `energy-intel data inspect` | Schema, assets and data quality, no mapping |
+| `energy-intel data ingest` | Full pipeline; writes all artifacts |
+| `energy-intel data validate` | Balance report; **exit 1 when it fails** |
+| `energy-intel data mapping` | SMART-DS to domain field mapping |
+| `energy-intel data manifest` | Manifest summary with content digest |
+| `energy-intel ml config` | Resolved experiment configuration |
+| `energy-intel ml targets` | Every forecasting target with support status and evidence |
+| `energy-intel ml features` | Feature catalogue with availability and leakage policy |
+| `energy-intel ml dataset` | Build the ML dataset and its manifest, without training |
+| `energy-intel ml run` | Dataset + all baselines + regime and error analysis + registry |
+| `energy-intel ml experiments` | The experiment registry |
+| `energy-intel init-dirs` / `paths` | Directory layout |
 
-Global flags: `--config PATH`, `--log-level LEVEL`, `--experiment-name NAME`,
-`--seed INT`, `--domain-config PATH`. A run-config path can also come from
-`$ENERGY_INTEL_CONFIG`.
+Global flags: `--config`, `--log-level`, `--experiment-name`, `--seed`.
+Sub-command flags: `--domain-config` (domain), `--data-config` (data), `--ml-config` (ml), `--out` (artifact directory).
 
 ## Layout
 
@@ -176,85 +243,109 @@ Global flags: `--config PATH`, `--log-level LEVEL`, `--experiment-name NAME`,
 .
 ├── src/energy_intelligence/
 │   ├── config/
+│   │   ├── data.py         Phase 3 dataset selection
 │   │   ├── domain.py       Phase 2 energy-domain configuration
 │   │   ├── loader.py       project root discovery, run-config loading
+│   │   ├── ml.py           Phase 4 experiment shape
 │   │   └── schema.py       run configuration (Phase 1)
-│   ├── domain/             Phase 2: the formal energy contract
-│   │   ├── actions.py      Action space + authority enforcement
-│   │   ├── assets.py       typed asset hierarchy
-│   │   ├── constraints.py  declared constraint categories
-│   │   ├── enums.py        the controlled vocabulary
-│   │   ├── errors.py       DomainValidationError
-│   │   ├── forecasts.py    Forecast + uncertainty attachment
-│   │   ├── identifiers.py  typed identifiers
-│   │   ├── objectives.py   objective categories + conflicts
-│   │   ├── observations.py ObservationRecord + role enforcement
-│   │   ├── provenance.py   mandatory traceability
-│   │   ├── quality.py      data-quality flags
-│   │   ├── quantities.py   Quantity(value, unit)
-│   │   ├── serialization.py deterministic versioned JSON
-│   │   ├── state.py        EnergyState + per-node power balance
-│   │   ├── system.py       EnergySystem + referential integrity
-│   │   ├── timebase.py     15-min grid arithmetic
-│   │   ├── topology.py     Node / NetworkElement / NetworkTopology
-│   │   └── uncertainty.py  UncertaintyEstimate
+│   ├── ml/                 Phase 4 ML dataset and baselines
+│   │   ├── targets.py          which quantities can be forecast, and which cannot
+│   │   ├── features.py         feature catalogue + leakage guard
+│   │   ├── splits.py           chronological splits, no window crosses a boundary
+│   │   ├── dataset.py          windowing, schema, versioning, artifact
+│   │   ├── scaling.py          train-only preprocessing statistics
+│   │   ├── metrics.py          generic + energy-specific error measures
+│   │   ├── analysis.py         regime and error analysis
+│   │   ├── baselines/          naive.py, classical.py, neural.py
+│   │   ├── experiment.py       one experiment end to end
+│   │   ├── registry.py         reproducible experiment records
+│   │   ├── runner.py           artifact production
+│   │   └── pipeline.py         config to real data bridge
+│   ├── data/               Phase 3 ingestion
+│   │   ├── manifest.py     checksummed dataset manifest
+│   │   └── smartds/        the only layer that knows SMART-DS
+│   │       ├── adapter.py       facade: parse + normalise + quality
+│   │       ├── balance.py       energy balance validation (fixed tolerance)
+│   │       ├── buscoords.py     bare coordinate-list format
+│   │       ├── domain_mapper.py normalised records -> Phase 2 objects
+│   │       ├── dss.py           generic OpenDSS parser (dataset-agnostic)
+│   │       ├── layout.py        dataset paths
+│   │       ├── mapping.py       semantic field mapping + confidence
+│   │       ├── normalize.py     per-unit -> kW, index -> timestamp
+│   │       ├── pipeline.py      end-to-end orchestration
+│   │       └── schema.py        programmatic schema discovery
+│   ├── domain/             Phase 2: the formal energy contract (20 modules)
 │   ├── cli.py              command line entry point
 │   ├── health.py           environment health check
 │   ├── logging_setup.py    structured JSON Lines logging
 │   └── paths.py            canonical filesystem layout
 ├── tests/
+│   ├── data/               Phase 3 tests + fixtures extracted from real data
 │   ├── domain/             Phase 2 domain tests
+│   ├── ml/                 Phase 4 tests (leakage, splits, metrics, baselines)
 │   └── *.py                Phase 1 tests
-├── configs/
-│   ├── default.toml        run configuration
-│   ├── domain.toml         energy-domain configuration
-│   └── test.toml
-├── data/{raw,processed,external}/   dataset conventions (empty in Phase 2)
-├── models/                model checkpoints (empty in Phase 2)
-├── experiments/           per-run outputs (empty in Phase 2)
-├── artifacts/             machine-readable run outputs
-├── logs/                  JSON Lines logs (git-ignored)
+├── scripts/extract_fixtures.py   builds test fixtures from the real dataset
+├── configs/{default,domain,data,ml,ml_pv_nowcast,ml_pv_horizon,test}.toml
+├── data/raw/smart_ds/       downloaded SMART-DS subset (git-ignored)
+├── artifacts/data/         Phase 3 reports (git-ignored)
+├── artifacts/ml/           Phase 4 datasets and reports (git-ignored)
+├── experiments/registry.jsonl   the one committed experiment record
 └── docs/
     ├── architecture.md              target architecture, component boundaries
     ├── energy_system_spec.md        the Phase 2 contract in full
-    └── agent_responsibility_matrix.md  future agent responsibilities
+    ├── agent_responsibility_matrix.md  future agent responsibilities
+    ├── smart_ds_acquisition.md      source, version, checksums, reproducibility
+    ├── smart_ds_mapping.md          field-by-field mapping with confidence
+    ├── gaps_report.md               what SMART-DS does NOT provide (domain view)
+    └── ml_data_gap_report.md        what it does NOT provide (ML view)
 ```
 
-Domain subpackages for later phases (`forecasting/`, `moe/`, `optimization/`,
-`simulation/`, `agents/`, `mlops/`, `data/`) are **deliberately not created**
-until their phase implements them. An empty package would imply capability that
-does not exist.
+Subpackages for later phases (`moe/`, `optimization/`, `simulation/`, `agents/`,
+`mlops/`) are **deliberately not created** until their phase implements them. An
+empty package would imply capability that does not exist. `ml/` exists because
+Phase 4 implements it - and it contains baselines only, no custom model.
 
 ## Configuration
 
-Two independent configuration files:
+Three independent files, each a distinct concern:
 
-* `configs/default.toml` — **a run**: seed, device, paths, experiment name,
-  logging level. Loaded by `load_config()`.
-* `configs/domain.toml` — **the environment under study**: time base, system
-  identity and boundary, dataset anchor. Loaded by `load_domain_config()`.
+* `configs/default.toml` — **a run**: seed, device, paths, experiment name, logging.
+* `configs/domain.toml` — **the environment**: time base, system identity, boundary.
+* `configs/data.toml` — **the dataset**: region, sub-region, year, scenario, feeder.
 
-They are separate on purpose (D-037): a run config describes how to execute, a
-domain config describes what is being studied. Both reject unknown keys, so a
-typo fails fast instead of being silently ignored. All paths resolve to absolute
-paths against the project root. Every config object is a frozen dataclass, so it
-cannot be mutated mid-run and silently break reproducibility.
+All three reject unknown keys, so a typo fails fast instead of being silently
+ignored. All paths resolve to absolute paths against the project root. Every
+config object is a frozen dataclass, so it cannot be mutated mid-run and silently
+break reproducibility.
 
 ## Dependencies
 
-Runtime dependencies: **none**, in both phases. Dev extras: `pytest`,
-`pytest-cov`. The scientific/ML stack is not committed until a phase actually
-needs it. See `decisions.md` → D-004 and D-005.
+Phases 1-3 had **no** runtime dependencies: configuration, logging, testing, health
+checks and the entire SMART-DS ingestion pipeline run on the standard library alone.
+
+Phase 4 adds exactly three, because it is the first phase that needs a numerical
+stack (D-055): `numpy`, `scikit-learn`, and `torch` from the **CPU-only** index
+(the default Windows wheel bundles CUDA and is several hundred megabytes). pandas was
+deliberately **not** adopted, and a test asserts it is never imported.
+
+A test also asserts that `energy_intelligence/domain/` imports **no** ML library, so
+the Phase 2 contract stays a dependency-free vocabulary that everything else speaks.
+
+Dev extras: `pytest`, `pytest-cov`.
 
 ## Documentation
 
 | File | Contents |
 |---|---|
-| `decisions.md` | Every architectural decision D-001 … D-039, with alternatives and consequences |
+| `decisions.md` | Every decision D-001 … D-070, with alternatives and consequences |
 | `flow.md` | How the system actually works, by real function and file name |
 | `docs/energy_system_spec.md` | The Phase 2 contract: state, actions, constraints, objectives, time, topology, provenance, quality, uncertainty |
-| `docs/agent_responsibility_matrix.md` | Future agent responsibilities, sourced from the two reference repositories |
-| `docs/architecture.md` | Target architecture and component responsibility boundaries |
+| `docs/agent_responsibility_matrix.md` | Future agent responsibilities, sourced from two reference repositories |
+| `docs/smart_ds_acquisition.md` | Source, version, checksums, subset, reproducibility |
+| `docs/smart_ds_mapping.md` | Field-by-field mapping with confidence and origin |
+| `docs/gaps_report.md` | 12 gaps: what SMART-DS does not provide (domain view) |
+| `docs/ml_data_gap_report.md` | 15 gaps: what it does not provide for machine learning |
+| `docs/architecture.md` | Target architecture and component boundaries |
 | `handoff.md` | Current state, what is done and not done, next phase, critical context |
 
 

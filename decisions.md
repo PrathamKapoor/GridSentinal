@@ -529,27 +529,37 @@ instead of mutating the real checkout.
 
 ---
 
-## D-018 — Unknown items
+## D-018 — Register of deliberately undecided items
 
 Items explicitly left open, per the brief's instruction to write `TBD` rather
-than guess. None of these are implemented.
+than guess. **None of these are implemented.** Items marked *resolved* were
+settled by a later decision; the "Resolved in" column says which.
 
 | Item | Status | Decided in |
 |---|---|---|
-| Which energy system is modelled (grid, microgrid, building, DER fleet) | TBD | Phase 2 |
-| Dataset source, size, cadence, licensing | TBD | Phase 2-3 |
+| Which energy system is modelled (grid, microgrid, building, DER fleet) | **resolved** — renewable-integrated distribution DER environment | D-022 |
+| Network topology fidelity | **resolved** — topology-aware, node-granular, physics deferred | D-023 |
+| Temporal resolution and horizon | **resolved** — 15 min native, H=96 day-ahead | D-024 |
+| Control authority over flexible assets | **resolved** — tiered per-asset authority | D-028 |
+| Dataset representability anchor | **resolved** — SMART-DS (anchor only, not a download) | D-038 |
+| Concrete dataset selection, size, cadence, licensing | TBD | Phase 3 |
+| Tariff model and currency unit | TBD | Phase 3 |
+| Grid emission factors | TBD | Phase 3 |
 | Baseline forecasting models | TBD | Phase 4 |
 | Energy World Model architecture | TBD | Phase 5 |
+| Whether the ~100M edge model shares weights with the ~1.7B model | TBD | Phase 5-6 |
 | Energy-MoE expert count, routing objective, regime definitions | TBD | Phase 7 |
-| Uncertainty estimation method | TBD | Phase 8 |
-| Flexibility representation | TBD | Phase 9 |
+| Uncertainty estimation method (quantile / ensemble / conformal) | TBD — container exists | Phase 8 |
+| Flexibility quantification method | TBD — representation exists | Phase 9 |
 | Optimizer (MPC / LP / MILP / NLP / RL) — must follow the problem formulation | TBD | Phase 10 |
-| Digital twin fidelity and simulator | TBD | Phase 11 |
+| Digital twin fidelity and simulator; power-flow solver | TBD | Phase 11 |
 | Red Team scenario library | TBD | Phase 12 |
 | Decision-assurance scoring formula and thresholds | TBD | Phase 13 |
-| MLOps agent roster | TBD | Phase 14 |
+| Final MLOps agent roster (matrix is a candidate list, not a commitment) | TBD | Phase 14 |
 | Jenkins pipeline definition | TBD | Phase 15 |
+| Ramp limits and minimum up/down times | TBD — needs measured data | Phase 3 |
 | UI framework and reference interface | TBD | Phase 19 |
+
 
 ---
 
@@ -619,5 +629,509 @@ code.
 contributors see LF in their editor, which every modern editor and IDE handles
 correctly. Future Phase 3 data files and Phase 6 model checkpoints are already
 declared `binary` so a later phase cannot accidentally normalise a checkpoint.
+
+**Status:** Accepted
+
+---
+
+# Phase 2 — Energy system definition and data model (D-022 … D-039)
+
+Phase 1 (D-001 … D-021) established *how* the software is organised. Phase 2
+establishes *what energy system is modelled*. The decisions below are the
+contract every later phase depends on.
+
+## Source-repository findings (context for D-022 … D-024)
+
+Both source repositories were cloned and inspected directly rather than assumed.
+
+| Finding | Evidence |
+|---|---|
+| **SAT-SA is a cybersecurity SOC supervision project, with zero energy content** | `battery`, `feeder`, `voltage`, `storage` → 0 hits in `src/` |
+| **Guard is a forecasting-MLOps project on aggregate bulk data**, not distribution DERs | RTS-GMLC, 2020, hourly, 8,784 rows, targets LOAD/WIND/PV; `battery`, `EV`, `HVAC`, `curtail`, `feeder`, `voltage`, `storage` → **0 hits** in `src/` |
+| **Neither models uncertainty** | Guard: `quantile`, `conformal`, `ensemble`, `aleatoric`, `epistemic` → 0 hits |
+| **Neither has a red team, digital twin or optimizer** | `red.?team`, `adversar`, `digital.?twin`, `simulat`, `optimiz`, `MILP`, `MPC`, `cvxpy` → 0 hits in Guard |
+| **SAT-SA's advertised 13-field agent contract is not implemented** | `analysis_period` has 2 hits, both in docstrings; no dataclass/Protocol with those fields exists |
+| **Guard's agent contract and capability firewall are real** | `agents/schemas.py` `AgentOutput`/`OUTPUT_CONTRACT_FIELDS`; `agents/firewall.py` allow-list vs block-list, unknown blocked by default |
+| **SAT-SA's provenance layer is strong** | `SourceRecord`, `ProvenanceRecord`, hash-chained ledger, canonical-form module |
+
+**Conclusion driving D-022:** the energy domain has to be built here. What is
+reusable is architectural *pattern*, not code. The split is recorded in
+`docs/agent_responsibility_matrix.md`.
+
+---
+
+## D-022 — Model a renewable-integrated distribution-level DER environment
+
+**Context:** The brief fixes the boundary as a distribution-level environment with
+DERs and forbids inventing a specific number of buses, buildings, batteries, solar
+plants or EVs. Both source repositories model something else entirely.
+
+**Choices:** Match a source repository's scope (aggregate bulk forecasting) /
+single lumped node with no network / **node-granular distribution network with DERs
+attached** / full AC power flow from Phase 2.
+
+**Selected:** The boundary given in the brief, implemented as a configurable node
+graph with typed DER assets. Full topology in `docs/energy_system_spec.md` §1.
+
+**Rationale:** Only this boundary yields a genuine *decision* problem rather than a
+forecasting exercise — which the brief requires explicitly. It also makes the
+listed target applications (renewable integration, grid reliability, flexibility,
+curtailment, resilience) simultaneously addressable.
+
+**Consequence:** RTS-GMLC, which the source forecasting repository used, **cannot
+be this project's dataset**: it has no batteries, EVs, flexible loads or topology.
+Phase 3 must not select it. No asset or node count is hard-coded anywhere.
+
+**Status:** Accepted
+
+---
+
+## D-023 — Topology-aware, node-granular, physics deferred
+
+**Context:** How faithful must the network be? This determines whether
+voltage/current/thermal variables exist at all and what Phase 10 can constrain.
+The brief lists voltage, current, line loading and transformer loading as
+candidate grid-state variables.
+
+**Choices:** Nodal with mandatory network physics and enforced voltage/thermal
+constraints / single-bus aggregate with no network / **topology-aware and
+node-granular with physics deferred**.
+
+**Selected:** Real `Node` and `NetworkElement` entities; per-node power balance
+enforced; network elements carry ratings and parameters as descriptive metadata;
+voltage and thermal loading are *observation* and *constraint* categories only.
+`Constraint.needs_power_flow` flags the two physics-dependent categories.
+
+**Rationale:** Satisfies the brief's requirement that topology be a first-class,
+configurable representation and that the digital twin have something to simulate,
+without committing Phase 2 to a power-flow solver. Claiming enforceable voltage
+constraints without a solver would be a false capability.
+
+**Consequence:** `NetworkTopology.is_aggregate` is surfaced so a lumped system is
+never mistaken for a feeder, and `configs/domain.toml` declares `topology_kind`
+explicitly. Node voltage and current are **observations**, never derived values.
+A single lumped node remains a valid configuration, so the same types serve both.
+
+**Status:** Accepted
+
+---
+
+## D-024 — 15-minute native timestep, 96-step day-ahead horizon
+
+**Context:** The brief forbids inventing the timestep or horizon and requires the
+choice to be justified. The source forecasting repository used hourly RTS-GMLC.
+
+**Choices:** Hourly H=24 / 5-minute H=288 / **15-minute H=96 with hourly derived** /
+15-minute H=672 week-ahead.
+
+**Selected:** `timestep_minutes = 15`, `horizon_steps = 96` (24 h), hourly
+derivable by integer aggregation (4 steps/hour). Configurable, not hard-coded.
+
+**Rationale:** Battery cycling and EV charging are only meaningfully schedulable at
+sub-hourly resolution — a 1-hour battery cycle cannot express most useful
+schedules, so hourly under-resolves the very flexibility this project studies. PV
+ramp within an hour is materially non-representative on a distribution feeder.
+15 minutes is also the resolution used by distribution operators and by the
+representability anchor. The source repo's hourly choice was never constrained by
+storage or EVs, because it has none.
+
+**Consequence:** `TimeBase` is built from configuration, so 5-minute or hourly
+requires no code change. The permitted timestep set is constrained to values that
+aggregate cleanly. Off-grid timestamps are rejected, not rounded — silent rounding
+would shift the whole system by a partial step.
+
+**Status:** Accepted
+
+---
+
+## D-025 — Domain errors are collected and reported together
+
+**Context:** Extends Phase 1's D-008 to the domain layer.
+
+**Choices:** Fail on first error / collect all errors / log and continue.
+
+**Selected:** `DomainValidationError` carries every violation found, in a
+`DomainValidationError.errors` tuple. Every domain object validates in
+`__post_init__`.
+
+**Rationale:** Validation at construction means an invalid energy state cannot
+exist, so no later phase has to defend against one. Collecting errors means a
+malformed object is fixable in one pass.
+
+**Consequence:** Construction is slightly more expensive than assignment, which is
+irrelevant at this scale. Every object is frozen and slotted, so validation cannot
+be bypassed by later mutation either.
+
+**Status:** Accepted
+
+---
+
+## D-026 — Explicit sign conventions and unit enforcement
+
+**Context:** In an energy system a bare float is a correctness hazard: 0.5 means
+half a megawatt or half a state of charge depending on context, and confusing them
+is silent.
+
+**Choices:** Bare floats / unit-annotated floats / **`Quantity` objects carrying a
+closed `Unit` enum**.
+
+**Selected:** Every numeric domain value is a `Quantity(value, Unit)`. Units are a
+closed `StrEnum`. Mixing units raises rather than coercing.
+
+**Rationale:** Makes unit confusion a construction-time error instead of a
+plausible-looking wrong number. Rejects NaN and infinity, which would otherwise
+propagate silently through every downstream calculation.
+
+**Consequence:** Phase 2 performs **no unit conversion**. Consequences that are
+correct rather than convenient: `EnergySystem.controllable_capacity_kw` skips
+non-kW ratings; `Battery.nameplate_duration_hours` returns `None` unless the
+energy/power unit pair is dimensionally compatible (`kWh`/`kW`, `MWh`/`MW`). The
+unit enum also needed `KILOVOLT` and `MEGAWATT_HOURS` added during implementation —
+distribution nominal voltage is naturally in kV.
+
+**Status:** Accepted
+
+---
+
+## D-027 — Typed identifiers with per-kind prefixes
+
+**Context:** Cross-entity references must resolve. A bare string cannot prevent
+`NodeId("asset-7")`.
+
+**Choices:** Bare strings / a single `str` alias / **frozen validated classes with
+per-kind prefix patterns**.
+
+**Selected:** `AssetId`, `NodeId`, `NetworkElementId`, `ConstraintId`,
+`ObjectiveId`, `ActionId`, `ForecastId`, `SystemId`, each matching
+`^<prefix>-[a-z0-9][a-z0-9_-]{0,63}$`.
+
+**Rationale:** Makes a cross-kind reference impossible to write rather than
+something a later validation has to catch. Prefix patterns make serialized JSON and
+logs self-describing.
+
+**Consequence:** Adding a new entity kind requires a new identifier class. This
+immediately paid off: `Constraint` and `ObservationRecord` originally stored asset
+references as bare `str`, and because `AssetId` is not a `str` subclass **every
+cross-reference silently failed to resolve**. Both now use typed identifiers and
+the mismatch is a construction-time error.
+
+**Status:** Accepted
+
+---
+
+## D-028 — Tiered per-asset control authority, carried on the action
+
+**Context:** Does the system own the flexible assets it models? The brief's
+execution loop requires an "execute" step; the source forecasting repository's
+firewall says agents may never execute anything.
+
+**Choices:** Full authority over all flexible assets / advisory only / **tiered
+per-asset authority**.
+
+**Selected:** `AuthorityLevel` of `DISPATCHABLE`, `SCHEDULEABLE`, `CURTAILABLE`,
+`ADVISORY_ONLY` or `NOT_CONTROLLABLE`, declared per asset. An `Action` carries the
+authority it was issued under and is rejected at construction if that authority is
+not in the sufficiency set for its action type.
+
+**Rationale:** A distribution operator genuinely cannot dispatch a customer's EV or
+HVAC unilaterally, so blanket authority would be scientifically invalid for a
+project claiming real energy relevance. It also makes Phase 13's adaptive autonomy
+meaningful: high autonomy for self-owned assets, advisory where authority is absent.
+
+**Sufficiency is an explicit set per action type, not a ranking.** An earlier draft
+encoded the levels as a lattice with `DISPATCHABLE > SCHEDULEABLE > CURTAILABLE`,
+which silently asserted that scheduling authority implies authority to curtail
+generation. That implication is false — curtailment is a direct output reduction,
+not a shift in time. Listing sufficiency explicitly makes each implication a stated
+decision. Relatedly, `AuthorityLevel` is a `StrEnum`, so `>=` on it would order
+members *alphabetically* (`"curtailable" < "scheduleable"`); a membership test is
+used instead.
+
+**Consequence:** `ADVISORY_ONLY` assets are fully modelled and reasoned about but
+can never be dispatched — the domain supports "we know we could shed this load but
+we have no authority to". Battery discharge requires `DISPATCHABLE`, which is the
+correctly strict requirement.
+
+**Status:** Accepted
+
+---
+
+## D-029 — Data quality is representable but never detected in Phase 2
+
+**Context:** The brief asks for data-quality metadata but forbids implementing
+anomaly detection.
+
+**Choices:** Implement detection now / **define the vocabulary and invariants only**.
+
+**Selected:** `DataQuality` with `frozenset` of flags: `ok`, `missing`, `stale`,
+`outlier`, `invalid_range`, `sensor_error`, `estimated`, `interpolated`. Invariants:
+≥1 flag required; `ok` cannot combine with anything; flags may co-occur.
+
+`is_usable_for_decision` is strict — **any** adverse flag, including `stale`,
+disqualifies a value from backing an action.
+
+**Rationale:** Staleness is included deliberately: an out-of-date state of charge is
+exactly the input that produces a confidently wrong dispatch, and "it was fine a few
+steps ago" is not a safe basis for acting on a time-coupled system. `stale` was
+initially *omitted* from the blocking set during implementation and a test caught
+it — a genuine gap, not a style choice.
+
+This is the one area where **SAT-SA is a negative reference**: it has no staleness
+detector, no sensor-error flag and no estimated/imputed marker, and its own
+research notes acknowledge that gap. Those are exactly the omissions worth closing.
+
+**Consequence:** Detection is Phase 14 (Data Quality and Anomaly agents).
+`is_usable_for_decision` may be relaxed per-component in Phase 13 under a tightened
+assurance level; it is the strict default.
+
+**Status:** Accepted
+
+---
+
+## D-030 — Constraints are declared, never enforced or formulated
+
+**Context:** The brief forbids finalising mathematical constraints that depend on an
+unselected topology, and places optimizer selection in Phase 10.
+
+**Choices:** Write the formulation now / declare categories with no algebra /
+defer entirely.
+
+**Selected:** Twelve `ConstraintCategory` values with natural units and a
+`CONSTRAINT_UNITS` mapping. `Constraint` binds them to real assets and nodes.
+`Constraint.is_enforceable_in_phase_2` returns `False` for every constraint.
+
+**Rationale:** A formulation written in Phase 2 would prejudge the Phase 10
+optimizer choice, which the brief explicitly forbids. Declaring the categories
+still constrains later work: a constraint naming a phantom resource is rejected
+here rather than surfacing later as a wrongly-feasible optimisation.
+
+**Consequence:** No constraint is enforced in Phase 2 and nothing pretends
+otherwise. The one invariant Phase 2 *does* enforce is per-node power balance,
+because it is structural rather than an optimisation choice (D-031).
+
+**Status:** Accepted
+
+---
+
+## D-031 — Per-node power balance is enforced structurally
+
+**Context:** The chosen topology is node-granular (D-023). What must hold at a node?
+
+**Selected:** `generation_kw + storage_kw + grid_kw − load_kw + unaccounted_kw ≈ 0`
+per node, within `POWER_BALANCE_TOLERANCE` = 0.5 kW. Sign convention: generation
+and grid import positive, load and grid export negative, storage a signed
+injection. `unaccounted_kw` records an explicit residual rather than hiding it.
+
+**Rationale:** This is what distinguishes a distribution model from a lumped one,
+and it catches the failure modes that would otherwise be invisible: a sign error, a
+double count, a missing asset. 0.5 kW is generous enough for unmodelled feeder
+losses while still catching those.
+
+**Consequence:** `EnergyState` construction fails on an unbalanced node — the check
+is in `__post_init__`, not deferred to a validation pass. Phase 11 may tighten the
+tolerance once a loss model exists. `EnergySystem.validate_state` additionally
+requires the state to cover *exactly* the system's nodes and to report no asset the
+system does not own as that asset type.
+
+**Status:** Accepted
+
+---
+
+## D-032 — Provenance is mandatory on every domain object
+
+**Context:** The brief requires traceability and cites SAT-SA's principle that data
+must have provenance rather than appearing magically inside the system.
+
+**Choices:** Optional provenance / mandatory `Provenance` / full provenance ledger
+with content digests.
+
+**Selected:** A mandatory `Provenance` on every observation, state, forecast,
+action, constraint and objective. `Provenance` is unconstructible without a
+`SourceReference` and at least one `ProvenanceEvent`.
+
+**Rationale:** Mandatory-by-construction is what stops provenance silently
+disappearing downstream, which is the specific failure mode SAT-SA documented and
+guarded against. The full ledger machinery SAT-SA uses (hash chaining, cryptographic
+signing, canonical-form modules) is deliberately **not** reproduced: Phase 2 adopts
+the contract, not the crypto. Whether later phases add digests is their decision.
+
+**Consequence:** `SourceReference.checksum` is optional for now (no dataset
+ingested yet) and should become mandatory in Phase 3. `ProcessingStep.version` is
+required so a result stays reproducible after code changes.
+
+**Status:** Accepted
+
+---
+
+## D-033 — Uncertainty is a container with the mathematics deferred
+
+**Context:** Uncertainty is first-class in the project's architecture, and no source
+repository models it at all.
+
+**Choices:** Ignore uncertainty until Phase 8 / model it now / **define the
+container, defer the method**.
+
+**Selected:** `UncertaintyEstimate` with `kind` (measurement / model / parametric /
+combined / **unknown**), `unit`, `method` defaulting to `"TBD"`, and exactly one of
+`lower_bound` / `upper_bound` / `standard_deviation` / `relative_std`.
+
+**Rationale:** `unknown` is a legal kind so a model can honestly declare that
+uncertainty is uncharacterised rather than omitting the field or defaulting to
+zero — the same "None means not-applicable, not zero" discipline SAT-SA uses in
+`ConfidenceVector`. Supplying more than one numeric summary is rejected because how
+an interval relates to a standard deviation depends on a distributional assumption
+Phase 8 has not made.
+
+**Consequence:** `Forecast` carries uncertainty optionally and reports
+`is_quantified_uncertainty`, so a consumer can refuse to act on an unquantified
+forecast. `Forecast` rejects `issued_at >= target_time`, because a record stamped at
+or after the moment it describes is hindsight and would contaminate evaluation.
+
+**Status:** Accepted
+
+---
+
+## D-034 — Action/observation separation enforced at construction
+
+**Context:** The brief requires every variable to be classified and forbids the same
+variable becoming both an uncontrolled observation and an action.
+
+**Choices:** Convention only / runtime validation / **construction-time rejection in
+both directions**.
+
+**Selected:** `VariableRole` (`OBSERVATION`, `ACTION`, `DERIVED`, `CONSTRAINT`,
+`OBJECTIVE`). `ObservationRecord` accepts only `OBSERVATION`/`DERIVED`.
+`Action` accepts only `ACTION`. `Forecast` accepts only `OBSERVATION`.
+
+**Rationale:** A mix-up here is silent and severe — commanding a battery by setting
+its state of charge, or treating a setpoint as a measurement. Enforcing it at
+construction means the error cannot exist.
+
+**Consequence:** `ObservationRecord` must be scoped to an asset or node; an
+unscoped observation cannot be attributed and is rejected. Adding a new role
+requires deciding which containers accept it.
+
+**Status:** Accepted
+
+---
+
+## D-035 — `StateOrigin` makes observed / simulated / predicted distinct
+
+**Context:** The brief requires these to be non-interchangeable so the twin can be
+compared against reality.
+
+**Selected:** Mandatory `StateOrigin` on `EnergyState` with `OBSERVED`, `SIMULATED`,
+`PREDICTED`, `ASSIMILATED`. Never inferred.
+
+**Rationale:** The project's central research signal is comparing a learned model's
+prediction against a simulation against reality. With origin implicit that
+comparison is meaningless.
+
+**Consequence:** The same `EnergyState` type carries all four origins, so comparing
+observed against simulated needs no change to the representation — only a check
+that the origins differ.
+
+**Status:** Accepted
+
+---
+
+## D-036 — Deterministic versioned JSON serialization, no database
+
+**Context:** The brief requires serializable domain objects that are deterministic,
+explicitly schematised, free of hidden fields, round-trippable and versionable, and
+forbids introducing a database without a requirement.
+
+**Choices:** Database / pickle / **deterministic JSON with an explicit schema
+version**.
+
+**Selected:** `encode()` emits compact, key-sorted JSON with a
+`_schema_version` field (`"2.0.0-phase2"`); `decode()` refuses an unknown version.
+Encoding walks `dataclasses.fields`, so the emitted key set *is* the field set —
+no hidden attribute can be smuggled through.
+
+**Rationale:** JSON is inspectable, dependency-free and diffable in git, which
+matters when reproducibility depends on seeing exactly what changed. Hand-written
+decoders keep the schema explicit rather than inferred from annotations.
+
+**Consequence:** Round-trip and determinism are enforced by tests for twelve
+concrete object kinds, not assumed. Dispatch in `from_dict` is by discriminating
+field and **order matters**: an asset payload also carries `node_id`, so the asset
+check must precede the bare-node check — this was a real bug found during
+implementation. `_schema_version` must be bumped when the shape changes.
+
+**Status:** Accepted
+
+---
+
+## D-037 — Domain configuration is a separate module, not a wider `AppConfig`
+
+**Context:** The brief permits extending the Phase 1 configuration only where
+required, with categories `energy_system`, `assets`, `time`, `data`, `simulation`.
+
+**Choices:** Widen `AppConfig` with nested tables / **a separate `config/domain.py`
+and `configs/domain.toml`**.
+
+**Selected:** `DomainConfig` with `TimeConfig`, `EnergySystemConfig` and
+`data_anchor`, loaded by `load_domain_config()`. `AppConfig` is untouched.
+
+**Rationale:** `AppConfig` describes *a run* (seed, device, paths, logging); domain
+config describes *the environment under study*. Keeping them apart means the 160
+Phase 1 tests remain meaningful and Phase 3 can load a dataset config without a run
+config and vice versa. Only fields Phase 2 actually uses are present — no dataset
+paths, no model paths, no simulation settings.
+
+**Consequence:** Two config files and two loaders, which is a small cost for a
+clear separation of concerns. `data_anchor` must be written **before** the first
+`[table]` header in TOML, since a key after a header belongs to that table — an
+error this project made once and has tests for. The permitted timestep set is
+constrained to `{1, 5, 15, 30, 60}` so coarser views aggregate by integer.
+
+**Status:** Accepted
+
+---
+
+## D-038 — SMART-DS as representability anchor, model stays dataset-agnostic
+
+**Context:** The brief forbids inventing a dataset and asks that the Phase 2 model be
+checked for representability.
+
+**Choices:** RTS-GMLC to match the source repo / IEEE PES test feeders / no anchor /
+**SMART-DS as a representability anchor with the model left dataset-agnostic**.
+
+**Selected:** `data_anchor = "smart-ds"` in `configs/domain.toml`, recorded as a
+*representability anchor*, not a download instruction. Phase 3 selects and fetches.
+
+**Rationale:** SMART-DS is the only open dataset supporting **both** topology
+(substations, feeders, lines, transformers, regulators in OpenDSS/CYME) and the full
+DER action space (PV, storage, EV charging, demand response, ZIP loads, 15-minute
+profiles). That makes the Phase 2 domain model falsifiable rather than abstract.
+Its stated limitation — timeseries battery dispatch is not included — must be
+handled by Phase 3, likely by deriving dispatch from state of charge.
+
+**Consequence:** RTS-GMLC is ruled out (D-022). The anchor is recorded so a later
+claim of representability is traceable rather than assumed, and so a future
+representability test has something to test against.
+
+**Status:** Accepted
+
+---
+
+## D-039 — No unit conversion and no aggregated energy/power helper
+
+**Context:** Should the domain convert between units?
+
+**Selected:** No conversion. `Quantity.require_same_unit` raises on mismatch.
+`Battery.nameplate_duration_hours` uses an explicit dimensionally-compatible pair
+table (`kWh`/`kW`, `MWh`/`MW`) and returns `None` otherwise.
+
+**Rationale:** Silent conversion in a data model hides the unit decisions that later
+phases legitimately make differently (per-unit tariffs, emissions factors). Failing
+loudly at the point of use is better than a wrong number.
+
+**Consequence:** Some helpers decline rather than guess:
+`EnergySystem.controllable_capacity_kw` skips non-kW ratings. This is why an
+implementation bug had to be caught by a test — the first version compared
+`usable_energy.unit != rated_power.unit`, which is *always* true (`kWh` is never
+equal to `kW`), making the property dead code.
 
 **Status:** Accepted

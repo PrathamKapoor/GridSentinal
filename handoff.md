@@ -1,8 +1,9 @@
-# Handoff — Phase 1
+# Handoff — Phase 2
 
 **Project:** Energy Intelligence — adaptive, self-verifying energy management
 **Event:** Yuva Yodha Energy Tech Hackathon 2026, Schneider Electric
-**Current phase:** **Phase 1 of 20 — Foundation and Project Scaffolding — COMPLETE**
+**Current phase:** **Phase 2 of 20 — Energy System Definition + Data Model — COMPLETE**
+**Previous phase:** Phase 1 — foundation and scaffolding — complete, **unmodified**
 **Date:** 2026-10-02
 **Author of all work:** PrathamKapoor <prathamkapoor027@gmail.com>
 
@@ -10,154 +11,174 @@
 
 ## 1. Completed work
 
-Phase 1 delivered in full. Nothing from a later phase was implemented.
+Phase 2 delivered in full. Nothing from a later phase was implemented.
 
-### Repository and environment
+### Step 1 — inspection (as the brief required)
 
-| Item | Result |
+| Check | Result |
 |---|---|
-| Git repository | Initialised (was absent). Branch `master`. One commit. |
-| Python | 3.12.5, pinned in `.python-version`, enforced `>=3.12,<3.13` |
-| Environment manager | `uv` 0.12.5, venv at `.venv`, exact `uv.lock` committed |
-| Build backend | `hatchling`, editable install |
-| Runtime dependencies | **None** |
-| Dev dependencies | `pytest` 9.1.1, `pytest-cov` 7.1.0 |
-| Line endings | `.gitattributes`, LF in index, platform-safe checkout |
+| Repo root at start | Phase 1 commit `2571c48`, working tree clean |
+| Phase 1 architecture | Read and **preserved**. `AppConfig`, `paths.py`, `logging_setup.py`, `health.py`, `cli.py` all extended or left untouched |
+| Phase 1 docs | `README.md`, `decisions.md`, `flow.md`, `handoff.md`, `docs/architecture.md` read |
+| SAT-SA repository | Cloned and inspected (825 files) |
+| Guardrailed repository | Cloned and inspected (1,254 files) |
 
-### Source (`src/energy_intelligence/`)
+### Steps 2–5 — source research (findings, not assumptions)
 
-| File | Responsibility |
+| Finding | Evidence |
 |---|---|
-| `config/schema.py` | `AppConfig` (frozen, slots), `Device`, `LogLevel`, `coerce_app_config()`, `validate_app_config()`, `ConfigError`, `ConfigValidationError` |
-| `config/loader.py` | `find_project_root()`, `load_config()`, `load_raw_toml()`, `PROJECT_ROOT`, `CONFIG_DIR` |
-| `config/__init__.py` | Public configuration surface |
-| `logging_setup.py` | `initialize_logging()`, `get_logger()`, `reset_logging()`, `shutdown_logging()`, `RunContextFilter`, `ConsoleFormatter`, `JsonLinesFormatter` |
-| `paths.py` | `ProjectPaths`, `REQUIRED_DIRECTORIES` — canonical filesystem layout |
-| `health.py` | `check_health()`, six `check_*` functions, `CheckResult`, `HealthReport`, `render_report()` |
-| `cli.py` | `main()`, `build_parser()`, subcommands `health`, `config show`, `config validate`, `init-dirs`, `paths` |
-| `__main__.py` | `python -m energy_intelligence` delegating to `cli.main()` |
-| `__init__.py` | Package metadata and re-exports |
+| **SAT-SA is a cybersecurity SOC supervision project with zero energy content** | `battery`, `feeder`, `voltage`, `storage` → 0 hits in `src/` |
+| **Guard is forecasting MLOps on aggregate bulk data, not distribution DERs** | RTS-GMLC, 2020, hourly, 8,784 rows, LOAD/WIND/PV; `battery`, `EV`, `HVAC`, `curtail`, `feeder`, `voltage`, `storage` → **0 hits** |
+| **Neither models uncertainty** | Guard: `quantile`, `conformal`, `ensemble`, `aleatoric`, `epistemic` → 0 hits |
+| **Neither has a red team, digital twin or optimizer** | `red.?team`, `adversar`, `digital.?twin`, `simulat`, `optimiz`, `MILP`, `MPC`, `cvxpy` → 0 hits in Guard |
+| **SAT-SA's advertised 13-field agent contract is not implemented** | `analysis_period` → 2 hits, both docstrings; no matching class exists |
+| **Guard's agent contract and capability firewall are genuinely implemented** | `agents/schemas.py` `AgentOutput`; `agents/firewall.py` allow/block lists, unknown blocked by default |
+| **SAT-SA's provenance layer is strong** | `SourceRecord`, `ProvenanceRecord`, hash-chained ledger, canonical-form module |
 
-### Configuration (`configs/`)
+**Conclusion:** the energy domain had to be built here. What was reusable was
+architectural *pattern*, not code — recorded in
+`docs/agent_responsibility_matrix.md` §1 as R1–R12.
 
-* `default.toml` — seed, device, model_path, dataset_path, experiment_name,
-  log_level, output_dir, artifact_dir, log_dir. Every non-obvious value carries
-  a comment explaining why it exists and what is still `TBD`.
-* `test.toml` — minimal valid config so tests never depend on production values.
+### Steps 6–9 — blocking decisions, escalated rather than guessed
 
-### Directories created
+Four genuinely blocking questions were put to the user rather than decided
+silently. All four recommendations were accepted:
 
-```text
-configs/  data/raw/  data/processed/  data/external/
-models/   experiments/  artifacts/  logs/  docs/  tests/
-```
+| # | Question | Decision | Recorded |
+|---|---|---|---|
+| 1 | Topology fidelity | Topology-aware, node-granular, physics deferred | D-023 |
+| 2 | Temporal resolution / horizon | 15-min native, H=96 day-ahead, hourly derived | D-024 |
+| 3 | Control authority | Tiered per-asset authority, carried on the action | D-028 |
+| 4 | Dataset anchor | SMART-DS as representability anchor, model stays agnostic | D-038 |
 
-`data/{raw,processed,external}/`, `models/`, `experiments/`, `artifacts/` and
-`logs/` each contain a `.gitkeep` so the convention survives a fresh clone.
-Contents are git-ignored (D-016).
+### Steps 10–18 — implementation
 
-### Tests — 160 passing, 94% statement coverage
+`src/energy_intelligence/domain/` — **20 modules, the formal contract**:
 
-| File | Tests | Focus |
+| Module | Responsibility |
+|---|---|
+| `errors.py` | `DomainError`, `DomainValidationError` (collects **all** violations) |
+| `enums.py` | The controlled vocabulary: units, roles, assets, authority, actions, constraints, objectives, quality, origins, uncertainty kinds |
+| `identifiers.py` | `AssetId`, `NodeId`, `NetworkElementId`, `ConstraintId`, `ObjectiveId`, `ActionId`, `ForecastId`, `SystemId` |
+| `quantities.py` | `Quantity(value, Unit)`; rejects NaN/inf; explicit unit comparison |
+| `provenance.py` | `SourceReference`, `ProvenanceEvent`, `ProcessingStep`, `Provenance` |
+| `quality.py` | `DataQuality`, `CLEAN_QUALITY` |
+| `timebase.py` | `TimeBase` grid arithmetic; rejects naive and off-grid timestamps |
+| `uncertainty.py` | `UncertaintyEstimate`; `TBD` method; `UNKNOWN` kind legal |
+| `observations.py` | `ObservationRecord` + the action/observation boundary |
+| `topology.py` | `Node`, `NetworkElement`, `NetworkTopology` |
+| `assets.py` | `Asset`, `SolarAsset`, `WindAsset`, `Battery`, `EVCharger`, `FlexibleLoad` |
+| `state.py` | `NodePower`, `StorageState`, `RenewableState`, `DemandState`, `EVState`, `GridState`, `EnergyState` |
+| `actions.py` | `Action`, authority sufficiency, unit and sign rules |
+| `constraints.py` | `ConstraintCategory`, `Constraint` — declared, never enforced |
+| `objectives.py` | `ObjectiveCategory`, `Objective` — with conflicts, **no weight** |
+| `forecasts.py` | `Forecast` with uncertainty attachment |
+| `system.py` | `EnergySystem` + cross-entity referential integrity |
+| `serialization.py` | Deterministic versioned JSON, round-trip enforced |
+| `__init__.py` | 77-symbol public surface |
+
+Also added: `config/domain.py` + `configs/domain.toml`, three new CLI commands, a
+seventh health check, and documentation.
+
+### Answers to the brief's §36 completion questions
+
+| Question | Answer | Where |
 |---|---|---|
-| `tests/conftest.py` | — | Fixtures; autouse logging isolation |
-| `tests/test_package.py` | 7 | Import, `__all__`, `__main__`, zero-dependency guards |
-| `tests/test_config.py` | 84 | Every validation rule, layering, env var, root discovery |
-| `tests/test_logging.py` | 21 | JSONL structure, run context, idempotency, host handlers |
-| `tests/test_health.py` | 22 | Every check passing **and** failing; rendering |
-| `tests/test_paths.py` | 10 | Layout, `missing()`, `ensure()`, real-checkout assertions |
-| `tests/test_cli.py` | 16 | Exit codes, JSON output, overrides, error handling |
-
-Every test asserts behaviour that exists. There are no placeholder tests and no
-tests claiming to cover AI behaviour, because no AI exists.
-
-### Documentation
-
-* `README.md` — status table for all 20 phases, setup, commands, layout
-* `decisions.md` — 21 decisions (D-001…D-021), plus the D-018 register of
-  deliberately `TBD` items
-* `flow.md` — actual call flow by real function and file name
-* `docs/architecture.md` — target architecture, current Phase 1 architecture,
-  component responsibility boundaries, MoE-versus-agents distinction
-* `handoff.md` — this file
+| **What are we modelling?** | Renewable-integrated distribution-level DER environment | spec §1 |
+| **What does it observe?** | `ObservationRecord` with `VariableRole`, enforced non-interchangeable with actions | spec §2, §10 |
+| **What can it control?** | 9 `ActionType`s with units, sign rules, durations and authority gates | spec §3 |
+| **What can it not violate?** | 12 `ConstraintCategory` values, declared and bound to real assets | spec §4 |
+| **What does it optimise?** | 10 `ObjectiveCategory` values with direction, unit and declared conflicts; unweighted | spec §5 |
+| **What does uncertainty mean?** | `UncertaintyEstimate` container, 5 kinds, method `TBD` until Phase 8 | spec §10 |
+| **Where did the data come from?** | Mandatory `Provenance` on every domain object | spec §8 |
+| **How are assets represented?** | Typed hierarchy, 5 subclasses each carrying only its own fields | spec §2 |
+| **How will models consume it?** | `EnergyState` → `ObservationRecord` → `Forecast`, via deterministic versioned JSON | spec §12 |
+| **How will agents interact?** | `docs/agent_responsibility_matrix.md` — 23 candidates, responsibilities sourced | matrix §2, §3 |
 
 ---
 
 ## 2. Files changed
 
-33 files in the initial commit (plus `.gitattributes`), all new:
+All new except three Phase 1 files that were extended, and no Phase 1 file
+deleted or replaced.
 
 ```text
-.gitattributes  .gitignore  .python-version  README.md  pyproject.toml
-uv.lock  decisions.md  flow.md  handoff.md
-configs/default.toml  configs/test.toml
-docs/architecture.md
-src/energy_intelligence/{__init__,__main__,cli,health,logging_setup,paths}.py
-src/energy_intelligence/config/{__init__,loader,schema}.py
-tests/{conftest,test_cli,test_config,test_health,test_logging,test_package,test_paths}.py
-artifacts/.gitkeep  experiments/.gitkeep  logs/.gitkeep  models/.gitkeep
-data/raw/.gitkeep  data/processed/.gitkeep  data/external/.gitkeep
+NEW  src/energy_intelligence/domain/            20 modules
+NEW  src/energy_intelligence/config/domain.py
+NEW  configs/domain.toml
+NEW  tests/domain/conftest.py
+NEW  tests/domain/test_values.py
+NEW  tests/domain/test_topology_assets_state.py
+NEW  tests/domain/test_state_components.py
+NEW  tests/domain/test_system_serialization.py
+NEW  tests/domain/test_domain_config.py
+NEW  tests/domain/test_domain_cli.py
+NEW  docs/energy_system_spec.md
+NEW  docs/agent_responsibility_matrix.md
+
+EXTENDED  src/energy_intelligence/health.py     + check_domain_config (7th check)
+EXTENDED  src/energy_intelligence/cli.py        + domain show|validate|vocabulary
+EXTENDED  tests/test_health.py                  + domain_config in expected checks
+EXTENDED  README.md, decisions.md, flow.md      Phase 1 + Phase 2 documentation
 ```
 
-No pre-existing file was modified or deleted. The repository was empty at the
-start of Phase 1.
+Phase 1 source (`config/schema.py`, `config/loader.py`, `logging_setup.py`,
+`paths.py`, `__init__.py`, `__main__.py`) is **byte-unchanged**.
 
 ---
 
 ## 3. Current architecture
 
 ```text
-cli.main(argv)                                    cli.py
-  │
-  ├── health.check_health()                       health.py
-  │      ├── check_python_version()
-  │      ├── check_package_import()
-  │      ├── check_config() → config.load_config()
-  │      │                        → coerce_app_config() → AppConfig
-  │      ├── check_directories() → paths.ProjectPaths
-  │      ├── check_test_infrastructure()
-  │      └── check_logging()     → initialize_logging()
-  │
-  ├── config.load_config() / coerce_app_config() / validate_app_config()
-  ├── logging_setup.initialize_logging() / get_logger() / reset_logging()
-  ├── paths.ProjectPaths
-  └── health.render_report()
+energy_intelligence/
+├── config/          schema.py (run cfg) + loader.py + domain.py (domain cfg)
+├── domain/          the Phase 2 energy contract (20 modules)
+├── cli.py           health | config | domain | init-dirs | paths
+├── health.py        7 independent checks with remedies and exit codes
+├── logging_setup.py structured JSON Lines logging
+└── paths.py         canonical filesystem layout
 ```
 
-There is **no energy-domain code**. The entire runtime surface is
-configuration in, validated configuration and structured logs out.
+Runtime flow: `load_domain_config()` → construct domain objects (each validating
+itself) → `EnergySystem` referential integrity → `encode()`/`decode()` for
+handover between phases. Full detail in `flow.md`.
 
 ---
 
 ## 4. Key decisions
 
-Full detail in `decisions.md`. The ones that constrain later phases:
+Full detail in `decisions.md` (D-022 … D-039). The ones that constrain later work:
 
 | ID | Decision | Constraint on later phases |
 |---|---|---|
-| D-002 | Python 3.12, not 3.13 | Re-evaluate before Phase 6; `requires-python` has an upper bound |
-| D-004 | Zero runtime dependencies | Every new dependency needs a recorded justification |
-| D-006 | Frozen dataclasses + stdlib `tomllib` | Adding a config field touches 4 places; see §7 |
-| D-007 | Unknown config keys are rejected | Renaming a key is a breaking change |
-| D-009 | Paths resolved absolute, existence not required | Do not add load-time existence checks for `model_path` / `dataset_path` |
-| D-015 | Only Phase 1 directories created | Add a subpackage when you implement it, not before |
-| D-016 | Data/model/experiment contents git-ignored | Phase 3 and 6 must document how artifacts are versioned |
-| D-021 | LF via `.gitattributes` | New binary formats must be declared `binary` |
+| D-022 | Distribution-level DER environment | **RTS-GMLC cannot be this project's dataset** |
+| D-023 | Topology node-granular, physics deferred | Voltage/current are observations only until Phase 11 |
+| D-024 | 15 min × 96 steps | Config-driven, changeable without code edits |
+| D-026 | No unit conversion ever | Helpers return `None` rather than guess |
+| D-027 | Typed identifiers with prefixes | New entity kinds need a new identifier class |
+| D-028 | Tiered authority; sufficiency is a set, not a ranking | Never rank `AuthorityLevel` — it's a `StrEnum` |
+| D-030 | Constraints declared, never enforced | No formulation before Phase 10 |
+| D-031 | Objectives unweighted, **no `weight` field** | Adding one is a recorded decision |
+| D-032 | Provenance mandatory; ledger machinery not copied | `checksum` should become mandatory in Phase 3 |
+| D-035 | `StateOrigin` mandatory | Observed/simulated/predicted are never interchangeable |
+| D-037 | Domain config separate from `AppConfig` | Two files, two loaders — deliberately |
+| D-038 | SMART-DS is an **anchor**, not a download | Phase 3 selects and fetches |
 
 ---
 
 ## 5. Constraints in force
 
-1. No AI, MoE, optimizer, digital twin, red-team engine or MLOps agent exists.
-2. UI is the **last** phase. No frontend, dashboard or charts.
+1. No AI, MoE, optimizer, digital twin, red-team engine, MLOps agent, Jenkins or UI.
+2. UI is the **last** phase.
 3. Do not commit `paper/`, `research/` or `*.tex` (D-020).
-4. Do not introduce databases, cloud services, APIs, queues, Docker, Kubernetes,
-   vector databases or LLM APIs without a recorded decision.
-5. `UNKNOWN` and `TBD` are the correct answers when something is undecided.
-6. Optimizer choice must follow the Phase 2 problem formulation, not precede it.
-7. Regime definitions for the MoE are hypotheses, not confirmed, and must not
-   be hard-coded.
-8. Agents are orchestration; the MoE is the learned model. Never conflate them.
+4. No databases, cloud services, APIs, queues, Docker, Kubernetes, vector
+   databases or LLM APIs without a recorded decision.
+5. `UNKNOWN` and `TBD` are the correct answers when undecided.
+6. Optimizer choice must follow the Phase 2 constraint set, not precede it.
+7. Regime definitions for the MoE remain hypotheses; do not hard-code.
+8. Agents are orchestration; the MoE is the learned model. Never conflate.
+9. Constraints are declared, not enforced, until Phase 10.
+10. Objectives carry **no weight** until Phase 10 records a decision.
 
 ---
 
@@ -166,78 +187,94 @@ Full detail in `decisions.md`. The ones that constrain later phases:
 Every result below was observed in this session on Windows, Python 3.12.5.
 
 ```powershell
-uv venv --python 3.12
-uv sync --extra dev
-```
-
-```text
 uv run pytest
-  → 160 passed in 3.30s
+  → 492 passed in 3.39s        (160 Phase 1 + 332 Phase 2)
 
-uv run pytest --cov --cov-report=term-missing
-  → 160 passed, 94% total statement coverage
-  → __init__.py 100%, config/__init__.py 100%, paths.py 100%,
-    schema.py 98%, logging_setup.py 96%, loader.py 92%, health.py 92%,
-    cli.py 90%, __main__.py 0% (only reached via subprocess, not measured)
-
-uv run python -m energy_intelligence health
-  → 6 passed, 0 warning(s), 0 failed - HEALTHY   (exit code 0)
-  → config fingerprint: c5d43c283749
-
-uv run energy-intel health --json
-  → "ok": true                                     (exit code 0)
-
-uv run python -m energy_intelligence config show    → resolved config JSON
-uv run python -m energy_intelligence config validate
-  → configuration valid (fingerprint=c5d43c283749)
+uv run pytest --cov
+  → 492 passed, 90% total statement coverage (2528 statements)
 ```
 
-Verified health-check detail:
+| Module | Coverage | | Module | Coverage |
+|---|---|---|---|---|
+| `domain/enums.py` | 100% | | `domain/system.py` | 94% |
+| `domain/errors.py` | 100% | | `domain/uncertainty.py` | 94% |
+| `domain/identifiers.py` | 100% | | `domain/timebase.py` | 95% |
+| `domain/quality.py` | 100% | | `domain/constraints.py` | 82% |
+| `domain/quantities.py` | 98% | | `domain/forecasts.py` | 82% |
+| `domain/provenance.py` | 98% | | `domain/actions.py` | 81% |
+| `domain/__init__.py` | 100% | | `domain/observations.py` | 81% |
+| `domain/topology.py` | 85% | | `domain/assets.py` | 77% |
+| `domain/state.py` | 94% | | `domain/serialization.py` | 87% |
+| `domain/objectives.py` | 84% | | `config/domain.py` | 94% |
+
+```powershell
+uv run python -m energy_intelligence health
+  → 7 passed, 0 warning(s), 0 failed - HEALTHY   (exit code 0)
+
+uv run python -m energy_intelligence domain validate
+  → domain configuration valid (fingerprint=bb629a69b881)   (exit 0)
+
+uv run python -m energy_intelligence domain --domain-config configs/nope.toml validate
+  → exit 1
+
+uv run python -m energy_intelligence domain vocabulary
+  → exit 0, full vocabulary as JSON derived from the enums at runtime
+```
 
 ```text
 [PASS] python_version        Python 3.12.5 (.venv\Scripts\python.exe)
 [PASS] package_import        energy_intelligence 0.1.0 from src/energy_intelligence
 [PASS] config                experiment=phase1-baseline seed=42 device=cpu log_level=INFO
 [PASS] directories           all 8 directories present
-[PASS] test_infrastructure   pytest 9.1.1, 6 test module(s) in tests/
-[PASS] logging               JSON Lines log writable at logs/phase1-baseline.jsonl
+[PASS] test_infrastructure   pytest 9.1.1, 11 test module(s) in tests/
+[PASS] domain_config         sys-phase2-reference topology=feeder 15min x 96 steps
+                             (24h) anchor=smart-ds fingerprint=bb629a69b881
+[PASS] logging               JSON Lines log writable
 ```
 
-Git verification:
+**Zero Phase 1 regressions.** Two Phase 1 tests were updated because a
+foundation was genuinely added (the seventh health check), not because behaviour
+weakened.
 
-```text
-git status --short          → clean after commit
-git check-ignore -v         → confirmed .venv/, __pycache__/, .coverage,
-                              .pytest_cache/, logs/*.jsonl, and data/model/
-                              artifact contents are ignored
-staged file count           → 34
-```
+### Defects found by tests during Phase 2, all fixed
 
-### Two defects found and fixed during Phase 1
+Seven real bugs were caught by writing tests, not by inspection. Each is now
+regression-tested:
 
-Both were real, both are now regression-tested:
+1. **`horizon_hours` returned 1440 instead of 24** — divided seconds by 60 rather
+   than 3600.
+2. **`UncertaintyEstimate` raised `AttributeError` instead of
+   `DomainValidationError`** when `kind` was a plain string; the error message
+   itself dereferenced `.value`.
+3. **`QualityFlag.STALE` did not block decision use** — a design gap. A stale SOC
+   reading is exactly the input that produces a confidently wrong dispatch.
+4. **`Battery.nameplate_duration_hours` was dead code** — it compared
+   `kWh != kW`, which is always true. Now uses a dimensionally-compatible pair
+   table and returns `None` otherwise.
+5. **The authority "lattice" fabricated a total order**, asserting that scheduling
+   authority implies authority to curtail. Replaced with an explicit sufficiency
+   set per action type. `AuthorityLevel` is a `StrEnum`, so `>=` on it would have
+   ordered members *alphabetically*.
+6. **`from_dict` dispatch decoded every asset as a `Node`** — an asset payload also
+   carries `node_id`, and the node check came first.
+7. **`Constraint` and `ObservationRecord` stored references as bare `str`** while
+   everything else used typed identifiers. Since `AssetId` is not a `str`
+   subclass, **every cross-reference silently failed to resolve.**
 
-1. **`initialize_logging()` treated any handler on the project logger as
-   "already initialised"** and silently returned without configuring anything.
-   Any host handler — pytest's `caplog`, a Jupyter kernel, an embedding
-   application — would therefore disable logging entirely. Handlers are now
-   ownership-tagged (`_energy_intelligence_managed`); idempotency, reset and
-   shutdown consider only ours, and `reset_logging()` no longer removes a host's
-   handlers. Recorded as D-013. Guards:
-   `test_host_handlers_do_not_disable_initialisation`,
-   `test_reset_logging_leaves_host_handlers_alone`.
+A further latent crash was found by a test: `DemandState` raised `TypeError`
+instead of a validation error when a category value was non-numeric, because the
+sum reconciliation ran before type validation.
 
-2. **CLI `paths` output used native path separators**, so Windows produced
-   `data\raw` instead of `data/raw`, making the JSON output platform-dependent.
-   Now uses `Path.as_posix()`.
+Two implementation defects were also fixed during Phase 2 scaffolding: a missing
+`Unit.KILOVOLT` (distribution nominal voltage is naturally in kV) and an
+unreachable validation branch in the domain-config loader.
 
-Additionally, three tests initially asserted behaviour the code never promised
-(config-fingerprint stability across different checkouts, a sort order that was
-the reverse of its name, and an exact error string). Those assertions were
-wrong, not the code — except where noted in §4 — and were corrected rather than
-weakened. `AppConfig.fingerprint()` genuinely differs between checkouts because
-resolved paths embed the root; this is now documented and tested as intended
-behaviour (D-009).
+Several *tests* were also wrong and were corrected rather than weakened — most
+notably an identifier test that used the wrong prefix for every identifier kind,
+and a set of assertions that contradicted the documented behaviour (fingerprint
+stability across checkouts, authority ordering, objective conflicts). In each case
+the code was right and the assertion was corrected; the one genuine design gap
+(STALE) was fixed in the code.
 
 ---
 
@@ -245,124 +282,129 @@ behaviour (D-009).
 
 ### Known issues (none blocking)
 
-* **`__main__.py` shows 0% coverage.** It is only exercised through a
-  subprocess (`test_package_runs_as_a_module`), which coverage does not track.
-  Not a gap in behaviour testing.
-* **`filterwarnings = ["error"]`** in `pyproject.toml` promotes any warning to a
-  test failure. Intentional, and currently clean, but a future dependency upgrade
-  may surface a deprecation warning that must be fixed rather than silenced.
-* **Fingerprint is checkout-specific.** Two checkouts of the same commit produce
-  different fingerprints because absolute paths differ. Deliberate (D-009), but
-  do not use the fingerprint as a cross-machine run identity.
-* **No type checker or linter configured.** `ruff` / `mypy` were deliberately not
-  added (D-005) to keep the dependency set minimal. Code is fully annotated, so
-  adding them later is cheap. Worth doing before Phase 6.
+* **Coverage is 90%, not higher.** The uncovered lines are defensive type guards
+  (e.g. rejecting a `str` where a `NodeId` is required) and error branches in
+  `assets.py` (77%) and `actions.py` (81%). Acceptable for Phase 2; raise the bar
+  when Phase 3 adds logic rather than schema.
+* **No type checker or linter configured.** Deliberate (D-005) to keep the
+  dependency set minimal. The code is fully annotated, so adding `ruff` and `mypy`
+  before Phase 6 is cheap and is recommended.
 * **Git branch is `master`.** Left at the git default rather than renaming
-  silently. Decide whether to rename to `main` before the first push.
+  silently. Decide before the first push.
+* **Constraint and objective unit mapping is partly placeholder.** `energy_cost`,
+  `battery_degradation` and `emissions` use `Unit.COUNT` because a tariff model
+  and grid emission factors are Phase 3 concerns.
+* **`Constraint.is_enforceable_in_phase_2` is a constant `False`.** Intentional —
+  it exists so nothing implies enforcement that does not exist. It will need real
+  behaviour in Phase 10.
 
-### Deliberately not done in Phase 1
+### Deliberately not done in Phase 2
 
-No AI model, no training, no inference, no `Qwen3-1.7B-Base` download, no
-Energy-MoE or router, no optimizer, no digital twin, no red-team engine, no
-MLOps agents, no Jenkins pipeline, no CI configuration, no UI, no authentication,
-no database, no cloud service, no dataset download. See D-019.
+No optimizer, no digital twin, no red team, no decision assurance, no agents, no
+MLOps, no Jenkins, no UI, no training, no Qwen download, no dataset download, no
+database. See D-019 and D-030.
 
 ### Open items carried forward
 
 * Add `paper/`, `research/`, `*.tex` ignore rules **when** such a directory is
-  first created (D-020). They do not exist yet, so no rule was added.
-* Record how model checkpoints and datasets will be versioned once they exist
-  (D-016) — likely an external store with a checksum in configuration.
+  first created (D-020).
+* Record how model checkpoints and datasets will be versioned (D-016).
+* Make `SourceReference.checksum` mandatory in Phase 3 (D-032).
 * Decide the git branch name before the first remote push.
 
 ---
 
 ## 8. Next phase
 
-### Phase 2 — Energy-system definition + data model
+### Phase 3 — Dataset ingestion + preprocessing
 
-This is the highest-leverage phase in the plan, and several later phases are
-blocked on it. It must answer: **what energy environment are we actually
-modelling?**
+Phase 3 is where the Phase 2 contract must prove it is representable. The first
+genuine risk in the project is **abstraction drift**: a domain model that no real
+data can satisfy. Phase 2 mitigated that with the SMART-DS representability anchor
+(D-038); Phase 3 must close the loop.
 
-Downstream dependencies of Phase 2's decisions:
+### Recommended Phase 3 deliverables
 
-| Blocked phase | Blocked on |
-|---|---|
-| Phase 3 (ingestion) | the entity and time-resolution definitions |
-| Phase 4 (baselines) | which quantities to forecast |
-| Phase 9 (flexibility) | which assets are actually dispatchable |
-| Phase 10 (optimizer) | the constraint and variable formulation |
-| Phase 11 (digital twin) | the dynamics to be simulated |
+1. **Select and fetch the dataset.** SMART-DS is the anchor (D-038). Record the
+   exact sub-region, feeders and scenario. Note its stated limitation: timeseries
+   battery dispatch is not included, so dispatch must be derived from state of
+   charge.
+2. **Verify representability.** Instantiate a real `EnergySystem` from the fetched
+   data and assert per-node power balance closes. This is the first true test of
+   D-022/D-023 and the first time the 0.5 kW tolerance is checked against reality.
+3. **Make `SourceReference.checksum` mandatory** and populate provenance for every
+   ingested record (D-032).
+4. **Create `src/energy_intelligence/data/`** — the one domain-adjacent package
+   the brief's conceptual structure lists that Phase 2 deliberately did not create
+   (D-015). Ingestion and preprocessing only; no features for a model yet.
+5. **Implement genuine data-quality detection** for the flags the model can now
+   carry — in particular **staleness**, which SAT-SA lacks entirely (D-029).
+   Freshness and range validity first; outlier and sensor-error detection can
+   follow.
+6. **Resample to the configured 15-minute grid**, honouring
+   `TimeBase.aggregate_to_hourly()`. Reject rather than silently round
+   off-grid timestamps.
+7. **Record every dependency with the D-004/D-005 justification format.** Expect
+   the first genuine third-party dependencies to appear here (dataframes,
+   possibly a Parquet reader).
+8. **Add `paper/`, `research/`, `*.tex` ignore rules** if such a directory is
+   created (D-020).
 
-### Recommended Phase 2 deliverables
-
-1. **Choose the energy system.** Candidate scope: distribution feeder with DERs,
-   building microgrid, or a DER fleet managed as a single aggregate. This is the
-   first genuinely open decision and it is not made anywhere in the repository
-   yet.
-2. **Define entities.** Assets, their state variables, and their constraints.
-3. **Define the time series.** Resolution, horizon, history length, and the
-   physical units for every signal.
-4. **Define the data model** as concrete types, implemented in
-   `src/energy_intelligence/data/`, following the Phase 1 conventions
-   (`ProjectPaths`, `AppConfig`, `get_logger`, pytest).
-5. **Record every decision** in `decisions.md` and **extend `flow.md`** with the
-   new call flow.
-6. **Extend the health check** only if a new foundation is genuinely added —
-   do not add checks that merely restate the phase's own unit tests.
-7. **Add data-layer dependencies to `pyproject.toml` with a recorded
-   justification** for each, per the D-004/D-005 pattern. Expect the first
-   genuine third-party dependency to appear here.
-
-Phase 3 should not begin until Phase 2's definitions are settled. Choosing an
-optimizer in Phase 10 before the Phase 2 formulation exists is explicitly
-prohibited by the brief.
+Phase 4 should not begin until Phase 3 can produce a validated, provenance-tagged
+dataset that instantiates the Phase 2 contract.
 
 ---
 
 ## 9. Critical context for the next session
 
-1. **The repository contains no AI.** Do not write documentation, code or tests
-   implying otherwise. `README.md`, `decisions.md` (D-019) and the package
-   docstring all state this explicitly, and must be updated the moment it stops
-   being true.
+1. **Still no AI.** Do not write code, docs or tests implying otherwise.
+   `README.md`, `decisions.md` (D-019) and the package docstring all state this,
+   and must be updated the moment it stops being true.
 
-2. **Read `decisions.md` before changing anything.** 21 decisions are recorded
-   with alternatives and consequences. Several have regression tests that will
-   fail if the decision is reversed without a new entry — for example reversing
-   D-004 breaks `test_runtime_dependencies_are_empty`.
+2. **Read `decisions.md` before changing anything.** 39 decisions with
+   alternatives and consequences. Several have regression tests that fail if the
+   decision is reversed without a new entry — reversing D-004 breaks
+   `test_runtime_dependencies_are_empty`.
 
-3. **Two tests are deliberate guardrails.** `test_runtime_dependencies_are_empty`
-   and `test_no_ai_or_ml_dependencies_are_imported_at_import_time` fail if a
-   dependency is added without a decision. That is the intended behaviour, not a
-   bug to work around.
+3. **Constraints are declared, not enforced** (D-030). Do not "helpfully" implement
+   enforcement in Phase 3; that is Phase 10 and requires the optimizer decision.
 
-4. **Domain subpackages do not exist yet.** `energy_intelligence/{data,models,
-   forecasting,moe,optimization,simulation,assurance,agents,mlops}/` are absent
-   on purpose (D-015). Create one when implementing it. Creating an empty
-   package would falsely imply capability.
+4. **Objectives have no `weight` field** (D-031), asserted by
+   `test_objective_has_no_weight_field`. Adding one is a recorded decision, not an
+   incidental edit.
 
-5. **Reuse, do not reinvent.** Configuration is `AppConfig`; layout is
-   `ProjectPaths`; logging is `initialize_logging()` / `get_logger()`; new
-   subsystems are validated by `coerce_app_config` and logged with `extra=`
-   fields that become top-level JSON keys automatically.
+5. **Never rank `AuthorityLevel`** (D-028). It is a `StrEnum`, so `>=` orders
+   members alphabetically. Use `sufficient_authorities_for(action_type)` membership.
 
-6. **Add a config field in four places:** `AppConfig`, `CONFIG_FIELDS`, the
-   coercion function in `schema.py`, and `configs/default.toml`. Missing one
-   causes a test failure thanks to D-007, not a silent no-op.
+6. **Never compare units for equality across dimensions** (D-039). `kWh` is never
+   equal to `kW`; use the dimensionally-compatible pair table.
 
-7. **Verify before claiming.** Run `uv run pytest` and
-   `uv run python -m energy_intelligence health` and report the real output.
-   Never state that something passes without having run it.
+7. **Use typed identifiers for every cross-reference** (D-027). A bare `str` will
+   silently fail to resolve against an `AssetId`.
 
-8. **Git hygiene.** Commits are authored solely as
-   `PrathamKapoor <prathamkapoor027@gmail.com>`. No `Co-Authored-By`, no AI or
-   tool attribution of any kind, in commit messages, PRs, tags or release notes.
-   Never add Claude or any bot as a collaborator. Do not commit `paper/`,
-   `research/` or `*.tex`.
+8. **Add a config field in both config systems as needed**, remembering
+   `AppConfig` (a run) and `DomainConfig` (the environment) are separate (D-037).
+   TOML gotcha: a key written after a `[table]` header belongs to that table.
 
-9. **Undecided means `TBD`.** If something is not yet decided, write `TBD` or
-   `UNKNOWN`. Do not silently choose a technology because it is familiar. Every
-   reasonable choice needs a `decisions.md` entry stating what the alternatives
-   were, what was selected, why, and the consequence.
+9. **Domain subpackages still absent:** `forecasting/`, `moe/`, `optimization/`,
+   `simulation/`, `agents/`, `mlops/`, `data/`. Create one when implementing it.
+
+10. **Reuse, do not reinvent:** layout is `ProjectPaths`; logging is
+    `initialize_logging()` / `get_logger()`; validation is a frozen
+    `__post_init__` raising `DomainValidationError` with **all** errors; handover
+    between phases is `encode()`/`decode()`.
+
+11. **Verify before claiming.** Run `uv run pytest` and
+    `uv run python -m energy_intelligence health` and report real output. Never
+    state something passes without having run it.
+
+12. **Git hygiene.** Commits are authored solely as
+    `PrathamKapoor <prathamkapoor027@gmail.com>`. No `Co-Authored-By`, no AI or
+    tool attribution of any kind, in commit messages, PRs, tags or release notes.
+    Never add Claude or any bot as a collaborator. Do not commit `paper/`,
+    `research/` or `*.tex`.
+
+13. **Undecided means `TBD`.** If something is not yet decided, write `TBD` or
+    `UNKNOWN`. Do not silently choose a technology because it is familiar. Every
+    reasonable choice needs a `decisions.md` entry stating the alternatives, the
+    selection, the reason and the consequence.

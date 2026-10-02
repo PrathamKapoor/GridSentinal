@@ -1,0 +1,52 @@
+# Energy-domain configuration (Phase 2).
+#
+# Describes WHAT energy system is modelled. Phase 1's configs/default.toml
+# describes HOW a run is executed (seed, device, paths, logging) and is
+# deliberately unchanged: a run config and a domain config are different things
+# and are loaded separately. See decisions.md (D-037).
+#
+# Unknown keys are REJECTED in every section, for the reason given in Phase 1
+# D-007: a silently ignored typo produces a run that is not the run you think
+# it was.
+
+# Dataset family the domain model has been CHECKED to be representable against.
+# This is a representability anchor, not a download instruction: Phase 3 selects
+# and fetches data. "none" means no anchor has been verified yet.
+#
+# Must appear BEFORE the first [table] header, otherwise TOML treats it as a key
+# of that table.
+data_anchor = "smart-ds"
+
+[time]
+# Native resolution. 15 minutes is chosen because battery cycling, EV charging
+# and PV ramp are not meaningfully schedulable at hourly resolution. The allowed
+# set is constrained so coarser views can be derived by integer aggregation.
+timestep_minutes = 15
+
+# 96 steps of 15 minutes = 24 hours = day-ahead horizon.
+horizon_steps = 96
+
+# Grid anchor. Every step index is relative to this instant.
+origin = "2026-01-01T00:00:00+00:00"
+
+[energy_system]
+# Identifier for the modelled boundary. Must match the SystemId pattern
+# (^sys-[a-z0-9][a-z0-9_-]{0,63}$).
+system_id = "sys-phase2-reference"
+
+name = "Phase 2 reference environment"
+
+description = '''
+A renewable-integrated distribution-level environment containing distributed
+energy resources. NOT yet instantiated: Phase 2 defines the contract and the
+representation; the concrete asset inventory and dataset arrive in Phase 3.
+
+Boundary: utility grid -> distribution system -> demand, renewables and DERs.
+Excluded: transmission, wholesale markets, and any upstream generation beyond
+the point of common coupling.
+'''
+
+# "aggregate" = single lumped node; "feeder" = node graph with network elements.
+# Declared explicitly because a conclusion drawn on an aggregate system cannot
+# support per-location claims.
+topology_kind = "feeder"

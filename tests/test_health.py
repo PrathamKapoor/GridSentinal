@@ -31,6 +31,7 @@ ALL_CHECK_NAMES = {
     "config",
     "directories",
     "test_infrastructure",
+    "domain_config",
     "logging",
 }
 

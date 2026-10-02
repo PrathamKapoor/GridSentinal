@@ -111,6 +111,28 @@ def build_parser() -> argparse.ArgumentParser:
     config_subparsers.add_parser("show", help="Print resolved configuration as JSON.")
     config_subparsers.add_parser("validate", help="Validate configuration only.")
 
+    domain_parser = subparsers.add_parser(
+        "domain", help="Inspect or validate the energy-domain configuration."
+    )
+    domain_parser.add_argument(
+        "--domain-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Domain config file. Defaults to configs/domain.toml.",
+    )
+    domain_subparsers = domain_parser.add_subparsers(dest="domain_command", required=True)
+    domain_subparsers.add_parser(
+        "show", help="Print resolved energy-domain configuration as JSON."
+    )
+    domain_subparsers.add_parser(
+        "validate", help="Validate the energy-domain configuration."
+    )
+    domain_subparsers.add_parser(
+        "vocabulary",
+        help="Print the energy-domain vocabulary (asset types, roles, constraints, objectives).",
+    )
+
     subparsers.add_parser("init-dirs", help="Create the standard directory layout.")
     subparsers.add_parser("paths", help="Print the standard directory layout.")
 
@@ -166,6 +188,75 @@ def _command_config(args: argparse.Namespace) -> int:
     return _EXIT_OK
 
 
+def _command_domain(args: argparse.Namespace) -> int:
+    from .config.domain import load_domain_config
+
+    if args.domain_command == "vocabulary":
+        print(json.dumps(_domain_vocabulary(), indent=2))
+        return _EXIT_OK
+
+    try:
+        domain_config = load_domain_config(args.domain_config)
+    except ConfigError as exc:
+        print(f"domain configuration error:\n{exc}", file=sys.stderr)
+        return _EXIT_FAILED
+
+    if args.domain_command == "show":
+        print(json.dumps(domain_config.as_dict(), indent=2))
+    else:
+        print(
+            f"domain configuration valid "
+            f"(fingerprint={domain_config.fingerprint()})"
+        )
+    return _EXIT_OK
+
+
+def _domain_vocabulary() -> dict[str, object]:
+    """Summarise the domain vocabulary for human inspection.
+
+    Reporting this through the CLI rather than only in documentation means the
+    contract that later phases depend on is inspectable at runtime, and a
+    documentation drift becomes visible.
+    """
+    from .domain import (
+        CONTROLLABLE_AUTHORITY_LEVELS,
+        ActionType,
+        AssetType,
+        AuthorityLevel,
+        ConstraintCategory,
+        NetworkElementKind,
+        ObjectiveCategory,
+        QualityFlag,
+        StateOrigin,
+        UncertaintyKind,
+        VariableRole,
+    )
+    from .domain.assets import ASSET_TYPES
+    from .domain.serialization import SCHEMA_VERSION
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "variable_roles": sorted(role.value for role in VariableRole),
+        "asset_types": sorted(asset_type.value for asset_type in AssetType),
+        "asset_implementations": {
+            asset_type.value: cls.__name__ for asset_type, cls in sorted(
+                ASSET_TYPES.items(), key=lambda pair: pair[0].value
+            )
+        },
+        "authority_levels": sorted(level.value for level in AuthorityLevel),
+        "controllable_authority_levels": sorted(
+            level.value for level in CONTROLLABLE_AUTHORITY_LEVELS
+        ),
+        "action_types": sorted(action.value for action in ActionType),
+        "constraint_categories": sorted(c.value for c in ConstraintCategory),
+        "objective_categories": sorted(o.value for o in ObjectiveCategory),
+        "network_element_kinds": sorted(k.value for k in NetworkElementKind),
+        "quality_flags": sorted(f.value for f in QualityFlag),
+        "state_origins": sorted(o.value for o in StateOrigin),
+        "uncertainty_kinds": sorted(u.value for u in UncertaintyKind),
+    }
+
+
 def _command_init_dirs() -> int:
     created = ProjectPaths.from_root().ensure()
     if created:
@@ -211,6 +302,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _command_health(args)
             case "config":
                 return _command_config(args)
+            case "domain":
+                return _command_domain(args)
             case "init-dirs":
                 return _command_init_dirs()
             case "paths":

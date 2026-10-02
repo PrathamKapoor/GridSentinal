@@ -41,6 +41,7 @@ __all__ = [
     "check_config",
     "check_directories",
     "check_test_infrastructure",
+    "check_domain_config",
     "check_logging",
     "render_report",
 ]
@@ -246,7 +247,9 @@ def check_test_infrastructure(paths: ProjectPaths | None = None) -> CheckResult:
             remedy="Restore the tests/ directory from version control.",
         )
 
-    test_files = sorted(tests_dir.glob("test_*.py"))
+    # rglob, not glob: Phase 2 introduced tests/domain/, and a shallow glob would
+    # silently under-report the suite size.
+    test_files = sorted(tests_dir.rglob("test_*.py"))
     if not test_files:
         return CheckResult(
             name="test_infrastructure",
@@ -259,6 +262,97 @@ def check_test_infrastructure(paths: ProjectPaths | None = None) -> CheckResult:
         name="test_infrastructure",
         status="ok",
         detail=f"pytest {version}, {len(test_files)} test module(s) in tests/",
+    )
+
+
+def check_domain_config() -> CheckResult:
+    """Verify the Phase 2 domain configuration loads and is self-consistent.
+
+    Checks more than file presence: that the configured timestep and horizon are
+    mutually consistent, that the declared system identifier is valid, and that
+    the domain model itself is importable and round-trippable. A domain config
+    that parses but cannot produce a working domain model is not healthy.
+    """
+    from .config.domain import load_domain_config
+
+    try:
+        domain_config = load_domain_config()
+    except Exception as exc:  # noqa: BLE001 - report any config failure verbatim
+        return CheckResult(
+            name="domain_config",
+            status="fail",
+            detail=f"{type(exc).__name__}: {exc}",
+            remedy="Check configs/domain.toml, or create it from the Phase 2 template.",
+        )
+
+    errors: list[str] = []
+
+    # The configured temporal grid must be constructible as a domain TimeBase.
+    try:
+        from datetime import datetime
+
+        from .domain import TimeBase
+
+        time_base = TimeBase(
+            timestep_minutes=domain_config.time.timestep_minutes,
+            horizon_steps=domain_config.time.horizon_steps,
+            origin=datetime.fromisoformat(domain_config.time.origin),
+        )
+        if time_base.horizon_hours <= 0:
+            errors.append("configured horizon is not positive")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"temporal configuration is not constructible: {exc}")
+        time_base = None
+
+    # The domain model must round-trip; a contract that cannot be persisted
+    # cannot be handed between phases.
+    try:
+        from .domain import (
+            AssetId,
+            AssetType,
+            AuthorityLevel,
+            Node,
+            NodeId,
+            NodePower,
+            NetworkTopology,
+            Quantity,
+            Unit,
+        )
+        from .domain.serialization import decode, encode
+
+        probe_node = Node(
+            node_id=NodeId("node-healthcheck"),
+            name="health check probe",
+            voltage_kv=Quantity(11.0, Unit.KILOVOLT),
+            is_grid_connection=True,
+        )
+        topology = NetworkTopology(nodes=(probe_node,), description="health check probe")
+        payload = encode(topology)
+        if decode(payload) != topology:
+            errors.append("domain topology did not survive a serialization round-trip")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"domain model is not usable: {type(exc).__name__}: {exc}")
+
+    if errors:
+        return CheckResult(
+            name="domain_config",
+            status="fail",
+            detail="; ".join(errors),
+            remedy="Run 'energy-intel domain validate' for detail.",
+        )
+
+    return CheckResult(
+        name="domain_config",
+        status="ok",
+        detail=(
+            f"{domain_config.energy_system.system_id} "
+            f"topology={domain_config.energy_system.topology_kind} "
+            f"{domain_config.time.timestep_minutes}min x "
+            f"{domain_config.time.horizon_steps} steps "
+            f"({domain_config.time.horizon_hours:g}h) "
+            f"anchor={domain_config.data_anchor} "
+            f"fingerprint={domain_config.fingerprint()}"
+        ),
     )
 
 
@@ -362,6 +456,7 @@ def check_health(
         config_result,
         check_directories(resolved_paths),
         check_test_infrastructure(resolved_paths),
+        check_domain_config(),
         check_logging(config),
     )
 
@@ -388,8 +483,8 @@ def render_report(report: HealthReport) -> str:
     in a CI log, or written to a file unchanged.
     """
     lines = [
-        "Energy Intelligence - Phase 1 health check",
-        "=" * 52,
+        "Energy Intelligence - environment health check (Phase 1 + Phase 2 foundations)",
+        "=" * 68,
     ]
 
     for check in sorted(report.checks, key=lambda item: item.sort_key):
@@ -403,7 +498,7 @@ def render_report(report: HealthReport) -> str:
     warned = len(report.warnings())
     failed = len(report.failures())
 
-    lines.append("-" * 52)
+    lines.append("-" * 68)
     lines.append(
         f"{passed} passed, {warned} warning(s), {failed} failed - "
         f"{'HEALTHY' if report.ok else 'UNHEALTHY'}"

@@ -329,3 +329,230 @@ uv run energy-intel health --json                          # "ok": true, exit 0
 uv run python -m energy_intelligence config show
 uv run python -m energy_intelligence config validate
 ```
+
+---
+
+# Phase 2 — Energy domain flow
+
+Everything above is the Phase 1 foundation, unchanged. What follows is the
+energy domain added in Phase 2, by real module and function name.
+
+```text
+                      configs/domain.toml
+                              │
+                              ▼
+              config/domain.py :: load_domain_config()
+                              │
+                    ┌─────────┴──────────┐
+                    ▼                    ▼
+             TimeConfig            EnergySystemConfig
+                    └─────────┬──────────┘
+                              ▼
+                       DomainConfig
+                              │
+                              │  (fingerprint recorded in logs)
+                              ▼
+     ┌────────────────────────────────────────────────────────┐
+     │  energy_intelligence.domain  — the formal contract      │
+     ├────────────────────────────────────────────────────────┤
+     │  errors.py      DomainError / DomainValidationError      │
+     │  enums.py       the controlled vocabulary                │
+     │  identifiers.py AssetId, NodeId, ConstraintId, ...        │
+     │  quantities.py  Quantity(value, Unit)                    │
+     │  provenance.py  SourceReference/ProvenanceEvent/          │
+     │                 ProcessingStep/Provenance                  │
+     │  quality.py     DataQuality(flags)                       │
+     │  timebase.py    TimeBase.step_time() / step_index()       │
+     │  uncertainty.py UncertaintyEstimate                      │
+     │  observations.py ObservationRecord  ── role: OBS/DERIVED  │
+     │  topology.py    Node / NetworkElement / NetworkTopology   │
+     │  assets.py      Asset / Battery / SolarAsset / WindAsset  │
+     │                 EVCharger / FlexibleLoad                  │
+     │  state.py       NodePower / StorageState / DemandState /  │
+     │                 RenewableState / EVState / GridState /    │
+     │                 EnergyState                               │
+     │  actions.py     Action  ── role: ACTION, authority-gated  │
+     │  constraints.py Constraint  ── declared, never enforced  │
+     │  objectives.py  Objective  ── never weighted             │
+     │  forecasts.py   Forecast                                 │
+     │  system.py      EnergySystem  ── referential integrity   │
+     │  serialization.py encode() / decode()                     │
+     └────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+         validation happens in every __post_init__
+         (an invalid energy state cannot be constructed)
+```
+
+## 1. Configuration
+
+```text
+load_domain_config(path=None)
+  │
+  ├─ target = path or configs/domain.toml   (relative → PROJECT_ROOT)
+  ├─ tomllib.loads(target.read_text())
+  ├─ reject unknown top-level keys          → ConfigValidationError
+  ├─ require [time] and [energy_system]     → ConfigValidationError
+  ├─ reject unknown keys inside each section → ConfigValidationError
+  ├─ TimeConfig(timestep_minutes ∈ {1,5,15,30,60}, horizon_steps>0, origin)
+  ├─ EnergySystemConfig(system_id validated as SystemId, name, description,
+  │                     topology_kind ∈ {aggregate, feeder})
+  └─ return DomainConfig(time, energy_system, data_anchor)
+```
+
+`AppConfig` is deliberately **not** widened — see D-037.
+
+## 2. Construction and validation
+
+Every domain object validates itself in `__post_init__` and is
+`frozen=True, slots=True`, so an invalid object cannot exist and cannot be
+mutated into an invalid one. Errors accumulate into `DomainValidationError`.
+
+```text
+Quantity(value, unit)        finite, numeric, known unit
+SourceReference(...)         source_id, dataset, locator, version all non-empty
+Provenance(source, events)   source required; ≥1 event required  ← R4, D-032
+DataQuality(flags)           ≥1 flag; ok cannot combine; flags may co-occur
+TimeBase(step, horizon, origin)
+                             step>0, horizon>0, origin timezone-aware
+UncertaintyEstimate(...)     kind is UNKNOWN or exactly one numeric summary
+Node / NetworkElement / NetworkTopology
+                             ids valid; parent/endpoints resolve; a grid
+                               connection node has no parent; ≥1 grid connection
+Asset hierarchy              availability ∈ [0,1]; SOC window ordered; wind speeds
+                             cut_in<rated<cut_out; unit-consistent power bounds
+NodePower(...)               kW units; residual within POWER_BALANCE_TOLERANCE
+StorageState                 0≤SOC≤1; not charging and discharging at once
+DemandState                  category breakdown sums to the total
+EVState                      deferrable ≤ charging
+EnergyState                  origin required; provenance required; per-node
+                               balance closes; state covers every node
+Action                       role must be ACTION; issued_under must be a
+                               controllable level AND in the sufficiency set for
+                               the action type; setpoint unit and sign correct;
+                               duration ≥1; provenance required
+Constraint                   ≥1 asset or node; bounds ordered; unit matches
+                               the category's natural unit
+Objective                    measurement and why_it_matters required;
+                               NO weight field                          ← D-031
+Forecast                     issued_at < target_time; role is OBSERVATION;
+                               uncertainty unit matches the value unit
+```
+
+## 3. Cross-entity validation — `system.py`
+
+```text
+EnergySystem.__post_init__()
+  └─ _referential_errors()
+       ├─ no duplicate asset_id
+       ├─ every asset's node exists in the topology
+       ├─ every constraint's asset_id / node_id resolves
+       └─ no duplicate constraint_id / objective_id
+
+system.validate_state(state)            → validate_state_against_system()
+       ├─ state covers EXACTLY the system's nodes
+       ├─ storage reports only assets the system owns as a battery
+       └─ renewables report only assets the system owns as solar/wind
+
+system.validate_actions(actions)        → validate_actions_against_system()
+       ├─ target asset exists
+       ├─ target asset is controllable (ADVISORY_ONLY → refused)
+       ├─ issued authority is in sufficient_authorities_for(action_type)
+       └─ all failures reported together, not one at a time
+
+system.validate_observations(records)   → asset/node references resolve
+system.validate_forecasts(forecasts)   → horizon within the configured grid
+```
+
+## 4. Observation versus action — the boundary
+
+```text
+ObservationRecord(variable, role, value, quality, provenance, timestamp, scope)
+  └─ role ∈ {OBSERVATION, DERIVED}
+     role == ACTION  → DomainValidationError
+
+Action(action_id, action_type, target_asset_id, setpoint, role,
+       issued_under, start_step, duration_steps, provenance)
+  └─ role == ACTION
+     role ∈ anything else → DomainValidationError
+
+Forecast(...)
+  └─ role == OBSERVATION
+```
+
+This is what makes battery SOC (observation) structurally incapable of becoming a
+commanded variable. See D-034.
+
+## 5. Serialization — `serialization.py`
+
+```text
+encode(obj) → to_dict(obj) → _encode_value() recursively
+           → {"_schema_version": SCHEMA_VERSION, **payload}
+           → json.dumps(sort_keys=True, separators=(",",":"))
+
+decode(text) → parse JSON
+             → require _schema_version, refuse a mismatched one
+             → from_dict(body) dispatch by discriminating field
+                 EnergySystem  ← system_id
+                 Forecast      ← forecast_id
+                 Action        ← action_id
+                 Constraint    ← constraint_id
+                 Objective     ← objective_id
+                 EnergyState   ← node_power
+                 Observation   ← variable + quality
+                 NetworkElement← element_id
+                 Asset         ← asset_type      (BEFORE the Node check:
+                                                   an asset also carries node_id)
+                 NetworkTopology ← nodes
+                 Node          ← node_id
+```
+
+Round-trip and byte-determinism are enforced by tests over twelve object kinds.
+See D-036.
+
+## 6. Runtime inspection
+
+```text
+energy-intel domain validate          → validate configs/domain.toml
+energy-intel domain show             → resolved domain config as JSON
+energy-intel domain vocabulary       → the whole domain vocabulary as JSON,
+                                       derived from the enums at runtime so it
+                                       cannot drift from the code
+
+energy-intel health                  → now includes a 7th check:
+  check_domain_config()
+    ├─ load_domain_config() succeeds
+    ├─ the configured grid builds a domain TimeBase
+    └─ the domain model round-trips (a contract that cannot be persisted
+       cannot be handed between phases)
+```
+
+## 7. Test layout
+
+```text
+tests/conftest.py                              Phase 1 fixtures (unchanged)
+tests/test_package.py            (  7)  import, __all__, __main__, deps guards
+tests/test_config.py             ( 84)  validation rules, layering, env var, roots
+tests/test_logging.py            ( 21)  JSONL structure, run context, host handlers
+tests/test_health.py             ( 22)  every check passing AND failing; rendering
+tests/test_paths.py              ( 10)  layout, missing/ensure, checkout assertions
+tests/test_cli.py                ( 16)  exit codes, JSON output, overrides, errors
+                                  -----
+                                  160   Phase 1 (unchanged, 0 regressions)
+
+tests/domain/conftest.py                reference environment fixtures
+tests/domain/test_values.py             ( 94) identifiers, Quantity, provenance,
+                                              quality, TimeBase, uncertainty
+tests/domain/test_topology_assets_state.py ( 93) topology, assets, state, actions,
+                                              constraints, objectives, observations
+tests/domain/test_state_components.py   ( 40) remaining EnergyState branches
+tests/domain/test_system_serialization.py ( 52) cross-entity validation, Forecast,
+                                              encode/decode
+tests/domain/test_domain_config.py      ( 39) domain configuration strictness
+tests/domain/test_domain_cli.py         ( 14) domain CLI + health integration
+                                         -----
+                                         332   Phase 2
+                                         =====
+                                         492   total
+```
+

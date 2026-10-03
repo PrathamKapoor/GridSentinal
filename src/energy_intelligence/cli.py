@@ -212,6 +212,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the experiment registry.",
     )
 
+    temporal_parser = subparsers.add_parser(
+        "temporal",
+        help="Phase 5: train the Energy Demand Dynamics Model and run ablations.",
+    )
+    temporal_parser.add_argument(
+        "--temporal-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Temporal experiment config. Defaults to configs/temporal.toml.",
+    )
+    temporal_subparsers = temporal_parser.add_subparsers(
+        dest="temporal_command", required=True
+    )
+    temporal_subparsers.add_parser(
+        "config", help="Print the resolved temporal experiment configuration."
+    )
+    temporal_subparsers.add_parser(
+        "run",
+        help="Train the main model, select on validation, evaluate test once.",
+    )
+    temporal_subparsers.add_parser(
+        "ablate",
+        help="Run the configured ablations at the reduced budget.",
+    )
+    temporal_subparsers.add_parser(
+        "experiments",
+        help="Print the Phase 5 registry records.",
+    )
+
     subparsers.add_parser("init-dirs", help="Create the standard directory layout.")
     subparsers.add_parser("paths", help="Print the standard directory layout.")
 
@@ -526,6 +556,94 @@ def _command_ml(args: argparse.Namespace) -> int:
     return _EXIT_OK
 
 
+def _command_temporal(args: argparse.Namespace) -> int:
+    """Phase 5: the Energy Demand Dynamics Model.
+
+    Sub-commands
+    ------------
+    ``config``      resolved temporal experiment configuration
+    ``run``         train, select on validation, evaluate the test split once
+    ``ablate``      the configured ablations at a reduced, matched budget
+    ``experiments`` the Phase 5 registry records
+    """
+    import time
+
+    from .config.temporal import load_temporal_config
+    from .data.smartds import SmartDsLayout
+    from .ml.config_ml_bridge import dataset_config_from
+    from .ml.phase5 import load_phase4_reference, load_series_for_experiment
+    from .ml.registry import REGISTRY_FILENAME
+
+    config = load_temporal_config(args.temporal_config)
+
+    if args.temporal_command == "config":
+        print(json.dumps(config.to_dict(), indent=2))
+        return _EXIT_OK
+
+    if args.temporal_command == "experiments":
+        from .ml.registry import read_records
+
+        records = [
+            record
+            for record in read_records(ProjectPaths.from_root().experiments / REGISTRY_FILENAME)
+            if record.model.startswith("phase5")
+        ]
+        print(json.dumps([record.to_dict() for record in records], indent=2))
+        return _EXIT_OK
+
+    data_config = dataset_config_from()
+    layout = SmartDsLayout(
+        root=data_config.raw_root,
+        version=data_config.version,
+        year=data_config.year,
+        region=data_config.region,
+        subregion=data_config.subregion,
+        scenario=data_config.scenario,
+        substation=data_config.substation,
+        feeder=data_config.feeder,
+    )
+    if not layout.profiles_dir.is_dir():
+        print(f"dataset not acquired: {layout.profiles_dir}", file=sys.stderr)
+        print("see docs/smart_ds_acquisition.md", file=sys.stderr)
+        return _EXIT_FAILED
+
+    series = load_series_for_experiment(layout, config)
+    paths = ProjectPaths.from_root()
+    reference = load_phase4_reference(
+        paths.artifacts / "ml" / "load-40" / "reports" / "comparison.json"
+    )
+
+    started = time.perf_counter()
+    if args.temporal_command == "ablate":
+        from .ml.ablation import run_ablations, render_ablation_table
+
+        outcomes = run_ablations(
+            series, config=config, paths=paths, phase4_reference=reference
+        )
+        print()
+        print(render_ablation_table(outcomes))
+        print(f"\ntotal {time.perf_counter() - started:.0f}s")
+        return _EXIT_OK
+
+    from .ml.phase5 import run_phase5_experiment
+
+    result = run_phase5_experiment(
+        series,
+        sequence_config=config.sequence_config(),
+        training_config=config.training_config(),
+        paths=paths,
+        architecture=config.architecture,
+        experiment_id=f"phase5-{config.architecture}-{config.label}",
+        phase4_reference=reference,
+        label=config.label,
+        validation_stride=config.validation_stride,
+        model_params=dict(config.model_params),
+    )
+    print(result.render())
+    print(f"\ntotal {time.perf_counter() - started:.0f}s")
+    return _EXIT_OK
+
+
 def _command_init_dirs() -> int:
     created = ProjectPaths.from_root().ensure()
     if created:
@@ -577,6 +695,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _command_data(args)
             case "ml":
                 return _command_ml(args)
+            case "temporal":
+                return _command_temporal(args)
             case "init-dirs":
                 return _command_init_dirs()
             case "paths":

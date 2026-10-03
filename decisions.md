@@ -1901,3 +1901,174 @@ list; the dataset arrays, reports and checkpoints stay ignored because they are
 regenerable from the configuration.
 
 **Status:** Accepted
+
+---
+
+## D-071 - Phase 5 architecture: dilated causal TCN as the primary model
+
+**Context:** Phase 4 showed that both neural baselines (MLP, GRU) lost to a classical
+histogram gradient-boosting model at every horizon, and that an MLP degraded badly at
+24 h (6.4850 kW). The brief asks for one architecture chosen on evidence rather than
+on fashion. Nothing in the project measured an attention model, so the choice had to
+be made on the properties of the problem rather than on preference.
+
+**Decision:** the primary model is a **dilated causal temporal convolutional network**
+with three levels of residual blocks, kernel size 3, dilations `1, 2, 4, 8, 16, 32,
+64`, `48` channels and a per-series learned embedding of dimension `8`. A compact
+patch Transformer is implemented as a **secondary** model and is measured as an
+ablation, not as a claim.
+
+Reasoning recorded at the time of the decision: the receptive field spans the full
+`672`-step window without recurrence, which keeps the training cost bounded; the
+model is translation-equivariant, which matches a signal whose statistics do not
+change with the absolute time index; and it has few enough parameters (`74,099`) that
+a CPU budget is realistic. The Transformer was not dismissed on principle - it is
+measured, and the result is recorded in `artifacts/phase5/ablations.md`.
+
+**Status:** Accepted
+
+---
+
+## D-072 - Ordered windows as input, with the token stride applied only to inputs
+
+**Context:** Phase 4 fed models a flat vector of lags, which discards order: the same
+set of lags in a different order would be identical to the model. Phase 5's premise
+is that order carries information that representation throws away. Full native
+resolution for a week is `672` steps, which is expensive.
+
+**Decision:** the input is an ordered sequence of tokens; the token stride (`4`) is
+applied **only to the input window**, while the forecast targets stay at native 15-minute
+resolution. A week's context therefore costs `168` tokens instead of `672`, and the
+model still predicts every horizon in native steps.
+
+Sequence construction is centralised in one place (`ml/sequence.py`) with a causality
+guard that refuses any window whose origin would read a value at or after its own
+forecast timestamps.
+
+**Status:** Accepted
+
+---
+
+## D-073 - Chronology and split identity with Phase 4
+
+**Context:** a Phase 5 claim is meaningless unless it is measured on the same rows as
+the Phase 4 baseline it is compared against. Striding training origins changes the
+training population, which would break that identity if it were applied to evaluation.
+
+**Decision:** training origins are strided (`train_origin_stride = 4`) purely for
+compute. Validation and test origins keep stride `1`, so the evaluated population is
+**identical** to Phase 4's `179,520` test rows. The artifact records both counts
+(`237,600` training rows against `179,520` validation and test rows) so the difference
+is visible rather than implied. No shuffling anywhere.
+
+**Status:** Accepted
+
+---
+
+## D-074 - Delta target from the value at the forecast origin
+
+**Context:** persistence is within 3% of the best 15-minute result, which means most of
+the difficulty at short horizons is not in the history at all. A model that must
+reconstruct the level from a window is solving a harder problem than the one being
+scored.
+
+**Decision:** the model predicts the **change from the value at the forecast origin**,
+and the level is reconstructed for scoring. This is measured, not assumed: the
+`level_target` ablation costs **+253% at 15 min, +52% at 1 h and +20% at 24 h** against
+the same configuration. It is the largest single design effect found in Phase 5.
+
+**Status:** Accepted
+
+---
+
+## D-075 - Equal horizon weighting, L1 loss, no tuning against the test split
+
+**Context:** h=96 is where the classical model is strongest. A design that up-weighted
+the long horizon could produce a flattering average, and tuning the mixture weight
+against the test split would make the comparison meaningless.
+
+**Decision:** L1 loss with equal weights across the three horizon heads. Validation MAE
+in per-unit terms is the checkpoint selection criterion; early stopping is patience-based
+on validation only. The test split is evaluated **once**, after selection. `max_seconds`
+is a compute guard that stops training and evaluates the best checkpoint so far - it
+never selects anything, and the run that hit it was discarded as invalid rather than
+reported.
+
+**Status:** Accepted
+
+---
+
+## D-076 - GroupNorm inside the window, and why it is not leakage
+
+**Context:** normalisation over a batch mixes information across rows. Two questions
+follow: does it leak the test split, and does normalising across the time axis read the
+future?
+
+**Decision:** `GroupNorm` is applied across the channel and batch dimensions of a
+window, i.e. **within** each row's own past, never across time. It therefore cannot
+read a future value, and the batch contains training rows only during fitting. The
+choice is recorded because "batch normalisation looks like leakage" is a reasonable
+objection that deserves an explicit answer rather than a reassurance.
+
+**Status:** Accepted
+
+---
+
+## D-077 - Cyclic channels retained in the main model despite the ablation
+
+**Context:** the `no_cyclic` ablation was **better** than the reference at all three
+horizons (`-3.6%` at 15 min, `-28.7%` at 1 h, `-18.6%` at 24 h). On that evidence the
+sin/cos hour and day-of-year channels were not earning their place, and the honest
+move would have been to drop them from the shipped configuration.
+
+**Decision:** they are **kept** in the main run, and the negative result is reported
+prominently rather than quietly fixed. Two reasons. First, the ablation suite trains at
+`2` epochs and a coarse training stride, where its reference is far worse than the main
+run (`0.5435` against `0.4178` kW at 15 min); a component can look useless precisely
+when the model is undertrained. Second, re-running the main configuration after seeing
+the test result would be tuning against the test split, which D-075 forbids.
+
+The consequence is recorded honestly: **the shipped main configuration is not the best
+configuration this study found**, and removing the cyclic channels is the first thing
+Phase 6 should try at full budget. Deciding that requires a fresh, pre-registered run -
+not a re-run chosen because it scored better.
+
+**Status:** Accepted, with an explicit known deficiency
+
+---
+
+## D-078 - Regime analysis reports every horizon separately
+
+**Context:** the first implementation rebuilt the error arrays inside the per-horizon
+metrics loop, so the regime table was labelled with the **shortest** horizon's regime
+axes while carrying the **longest** horizon's errors. Per-regime MAEs came out roughly
+four times the headline figure, which is exactly the kind of error a reader would have
+taken at face value. No headline metric was affected, so nothing else would have caught it.
+
+**Decision:** analysis is factored into one shared function (`analyse_predictions`) that
+takes the horizon explicitly and emits a regime table **per horizon**, plus a headline
+naming which horizon it describes. Two regression tests assert that each horizon is
+judged on its own errors. A checkpoint replay path was added at the same time: it
+rebuilds the analysis from a saved checkpoint, **raises if the recomputed MAE differs
+from the recorded one**, and in doing so verified that the shipped checkpoint still
+reproduces its own metrics.
+
+**Status:** Accepted
+
+---
+
+## D-079 - Phase 5 conclusion recorded as mixed, not as a win
+
+**Context:** on the shared test split the TCN reaches `0.4178`, `0.8307` and `1.6510`
+kW against the Phase 4 GBM's `0.4242`, `0.8579` and `1.5648`. It is better at 15 min
+(`+1.5%`) and 1 h (`+3.2%`) and **worse at 24 h (`-5.5%`)**, while beating persistence
+at 1 h and 24 h and losing to it at 15 min (`-3.3%`). Selecting the headline "a temporal
+model beats the classical baseline" would be a partial reading of the model's own table.
+
+**Decision:** the recorded verdict is **mixed / partially improves**. Two horizons of
+three beat gradient boosting; the longest does not, and the longest is the one an
+operator would most want to improve. `h=96` remains the open problem, and the honest
+summary includes the fact that the best configuration found was not the shipped one
+(D-077).
+
+**Status:** Accepted

@@ -15,11 +15,13 @@ OBSERVE → UNDERSTAND → PREDICT → GENERATE OPTIONS → ATTACK OPTIONS
 
 ---
 
-## Current status: Phase 4 of 20 — ML-READY DATASET + BASELINE FORECASTING
+## Current status: Phase 5 of 20 — ENERGY DEMAND DYNAMICS MODEL
 
-**Phases 1-3 complete. Phase 4 complete. The first ML phase is done — and the
-baselines are measured, not promised.** No Energy World Model, no Qwen, no
-Energy-MoE, no optimiser, no digital twin, no agent, no UI exists yet, by design.
+**Phases 1-4 complete. Phase 5 complete — and its answer is mixed, not a win.** A
+learned temporal model beats the classical baseline at two of three horizons and loses
+at the third. No Energy World Model, no Qwen, no Energy-MoE, no optimiser, no digital
+twin, no agent, no UI exists yet, by design — and `docs/world_model_requirements.md`
+records why an action-conditioned model is not reachable from this dataset.
 
 | Phase | Capability | Status |
 |---|---|---|
@@ -27,9 +29,9 @@ Energy-MoE, no optimiser, no digital twin, no agent, no UI exists yet, by design
 | 2 | Energy-system definition + data model | **Complete** |
 | 3 | Dataset ingestion, normalization, reality validation | **Complete — PARTIAL fidelity** |
 | 4 | ML dataset + naive/classical/neural baselines | **Complete — measured** |
-| 5 | Energy World Model | Not started — informed by Phase 4 findings |
-| 6 | Qwen3-1.7B domain specialization | Not started |
-| 7 | Energy-MoE | Not started — regime evidence now exists |
+| 5 | Energy Demand Dynamics Model (temporal) | **Complete — mixed result** |
+| 6 | Qwen3-1.7B domain specialization | Not started — bar defined in `docs/qwen_energy_requirements.md` |
+| 7 | Energy-MoE | Not started — requirements in `docs/moe_design_requirements.md` |
 | 8 | Uncertainty estimation | Container only; method TBD |
 | 9 | Flexibility modelling | Representation only; **battery dispatch unavailable (G-01)** |
 | 10 | Optimization / decision engine | Not started |
@@ -43,6 +45,58 @@ Energy-MoE, no optimiser, no digital twin, no agent, no UI exists yet, by design
 | 18 | Demo scenarios | Not started |
 | 19 | UI / visualization | Not started |
 | 20 | Hackathon packaging | Not started |
+
+---
+
+## The Phase 5 answer
+
+> Does the **order** of a customer's demand history carry information that a flat
+> vector of lags discards, and does a learned temporal model beat the classical
+> baseline on the same rows?
+
+**Partly. Two horizons of three, yes; the 24-hour horizon, no.**
+
+A 74,099-parameter dilated causal TCN was trained on one week of ordered context and
+compared against Phase 4's baselines on the **identical** `179,520` chronological test
+rows. kW MAE, lower is better:
+
+| Model | h=1 (15 min) | h=4 (1 h) | h=96 (24 h) |
+|---|---|---|---|
+| persistence | **0.4043** | 0.8897 | 2.4343 |
+| Phase 4 classical GBM | 0.4242 | 0.8579 | **1.5648** |
+| **Phase 5 temporal TCN** | 0.4178 | **0.8307** | 1.6510 |
+| Phase 5 vs GBM | **+1.5%** | **+3.2%** | **-5.5%** |
+
+### Three findings that change Phase 6
+
+1. **The delta parameterisation is the single biggest design effect.** Predicting the
+   change from `y(t)` instead of the level is worth **+253% / +52% / +20%** at the
+   three horizons. Persistence is within 3% of the best 15-minute result, so most of
+   the short-horizon difficulty is not in the history at all.
+2. **Temporal order helps, but not everywhere.** The TCN beats gradient boosting at
+   15 min and 1 h and loses at 24 h. A future model must be judged per horizon; a
+   single average hides the one place it has to win.
+3. **Attention did not beat convolution on this data.** A 112k-parameter patch
+   Transformer was 49.8% worse at 15 min at a matched budget. That is the evidence
+   base for `docs/qwen_energy_requirements.md`, and it does not support assuming a
+   larger model will help.
+
+### Two things Phase 5 got wrong, on the record
+
+* The first shipped regime table labelled **h=1** regimes with **h=96** errors, because
+  the per-horizon metrics loop overwrote the error arrays. Headline metrics were
+  unaffected, so nothing else would have caught it. Analysis now runs once per horizon
+  with the horizon recorded, two regression tests assert the invariant, and a
+  checkpoint replay path re-derives the analysis and **fails if the recorded metrics
+  do not reproduce** (D-078).
+* The `no_cyclic` ablation was **better** than the shipped configuration at all three
+  horizons. The channels stayed, because dropping them after seeing the test result
+  would be tuning against the test split. So the shipped configuration is **not the
+  best this study found**, and Phase 6 should start by testing that at full budget
+  (D-077).
+
+**Not claimed:** any statistical significance (one seed, no confidence intervals), any
+action-conditioned capability, and any world-model behaviour.
 
 ---
 
@@ -232,6 +286,10 @@ uv run python -m energy_intelligence ml --ml-config configs/ml_pv_horizon.toml r
 | `energy-intel ml dataset` | Build the ML dataset and its manifest, without training |
 | `energy-intel ml run` | Dataset + all baselines + regime and error analysis + registry |
 | `energy-intel ml experiments` | The experiment registry |
+| `energy-intel temporal config` | Resolved temporal experiment configuration |
+| `energy-intel temporal run` | Train one temporal model, evaluate once, analyse, record |
+| `energy-intel temporal ablate` | The ablation suite and its measured table |
+| `energy-intel temporal experiments` | The temporal experiment registry |
 | `energy-intel init-dirs` / `paths` | Directory layout |
 
 Global flags: `--config`, `--log-level`, `--experiment-name`, `--seed`.
@@ -337,7 +395,7 @@ Dev extras: `pytest`, `pytest-cov`.
 
 | File | Contents |
 |---|---|
-| `decisions.md` | Every decision D-001 … D-070, with alternatives and consequences |
+| `decisions.md` | Every decision D-001 … D-079, with alternatives and consequences |
 | `flow.md` | How the system actually works, by real function and file name |
 | `docs/energy_system_spec.md` | The Phase 2 contract: state, actions, constraints, objectives, time, topology, provenance, quality, uncertainty |
 | `docs/agent_responsibility_matrix.md` | Future agent responsibilities, sourced from two reference repositories |
@@ -345,6 +403,9 @@ Dev extras: `pytest`, `pytest-cov`.
 | `docs/smart_ds_mapping.md` | Field-by-field mapping with confidence and origin |
 | `docs/gaps_report.md` | 12 gaps: what SMART-DS does not provide (domain view) |
 | `docs/ml_data_gap_report.md` | 15 gaps: what it does not provide for machine learning |
+| `docs/world_model_requirements.md` | What an action-conditioned world model needs, and why SMART-DS cannot supply it |
+| `docs/qwen_energy_requirements.md` | The bar a Qwen3-1.7B energy model must clear, derived from measured Phase 4/5 results |
+| `docs/moe_design_requirements.md` | Measured regime heterogeneity, the observable-gate constraint, and which MoE designs the evidence supports |
 | `docs/architecture.md` | Target architecture and component boundaries |
 | `handoff.md` | Current state, what is done and not done, next phase, critical context |
 

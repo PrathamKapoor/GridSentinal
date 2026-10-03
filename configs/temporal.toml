@@ -1,0 +1,147 @@
+# Phase 5 experiment: temporal demand dynamics.
+#
+# The task definition is inherited from Phase 4 on purpose - same target, same 40
+# customers, same seed, same horizons, same split fractions - because that is what
+# makes the two phases' TEST numbers directly comparable. Only the architecture and
+# the training protocol are decided here. See decisions.md D-072 and D-073.
+#
+# NOTE ON TOML ORDER: every bare key after a table header belongs to that table, so
+# all top-level scalars below come before [model_params] and the ablation tables.
+#
+# Unknown keys are REJECTED (D-007).
+
+# ---------------------------------------------------------------------------
+# Task (identical to Phase 4, so the test population is identical)
+# ---------------------------------------------------------------------------
+target = "customer_load"
+label = "tcn-main"
+customer_count = 40
+commercial_fraction = 0.25
+seed = 20260101
+
+# Horizons in native 15-minute steps: 15 min, 1 h, 24 h. None is dropped, including
+# h=96, which Phase 4 found difficult - that is exactly where a temporal model has to
+# show something.
+horizons = [1, 4, 96]
+
+train_fraction = 0.70
+validation_fraction = 0.15
+
+# ---------------------------------------------------------------------------
+# Temporal window
+# ---------------------------------------------------------------------------
+# One week of history in native steps: the shortest window containing a full weekly
+# cycle, which Phase 4 showed carries real signal (seasonal-naive-week beat
+# seasonal-naive-day by 25% at 24 h).
+lookback_steps = 672
+
+# The window is read every 4th step -> 168 tokens covering the same week. This
+# subsamples the INPUT WINDOW only; the grid, the targets and the horizons stay
+# native. A quarter of the compute for the same information, and the lookback
+# ablation measures what it costs.
+token_stride = 4
+
+# Training origins are strided for compute; VALIDATION AND TEST USE EVERY ORIGIN, so
+# the test rows are exactly Phase 4's 179,520. That is the whole reason the two phases'
+# numbers can be compared without re-running anything.
+train_origin_stride = 4
+
+# ---------------------------------------------------------------------------
+# Architecture
+# ---------------------------------------------------------------------------
+# Dilated causal temporal convolution. Chosen from Phase 4 evidence, not fashion:
+# error concentrated in the morning/evening ramps (local window shape, which is what a
+# convolution reads); the GRU cost 1232 s and lost everywhere (recurrence is the wrong
+# default on CPU); and a daily/weekly periodic signal is translation-equivariant.
+# See decisions.md D-073.
+architecture = "tcn"
+
+# sin/cos of hour-of-day and day-of-year. Origin-time only, so they cannot leak.
+cyclic_channels = true
+
+# Predict the CHANGE from the value at the origin rather than the level, so the
+# persistence shortcut is built into the model instead of something it must relearn.
+# Tested against the level formulation in the ablation table, not assumed.
+delta_target = true
+
+# ---------------------------------------------------------------------------
+# Training protocol
+# ---------------------------------------------------------------------------
+epochs = 8
+batch_size = 512
+learning_rate = 0.003
+weight_decay = 0.0
+
+# L1, because MAE is the reported metric. Optimising MSE and reporting MAE hides
+# peak under-weighting.
+loss = "l1"
+huber_delta = 0.05
+
+# Checkpoint selection on VALIDATION mean per-unit MAE across horizons. The test split
+# is evaluated once, after selection. Horizons are weighted equally: h=96 is not
+# up-weighted to manufacture an improvement (D-075).
+patience = 3
+min_delta = 0.00001
+max_seconds = 10800.0
+grad_clip = 1.0
+torch_threads = 8
+
+# Every 2nd validation row is used for per-epoch checkpoint selection: ~90k samples,
+# ample for ranking epochs, and it halves the per-epoch cost. The FINAL evaluation
+# always uses every test row, so this changes which epoch is chosen, never what is
+# reported.
+validation_stride = 2
+
+# Reduced budget for the ablations: fewer epochs and a wider training stride.
+# Comparisons are valid WITHIN the ablation set, which is why every ablation runs at
+# the same reduced budget; the delta-vs-level comparison is additionally repeated at
+# the main budget.
+ablation_budget_epochs = 2
+ablation_budget_stride = 32
+ablation_validation_stride = 16
+
+# ---------------------------------------------------------------------------
+# Architecture hyperparameters
+# ---------------------------------------------------------------------------
+# Small on purpose. A parameter sweep would answer "is a bigger network better" and
+# confound the question this phase asks.
+[model_params]
+channels = 48
+kernel_size = 3
+dilations = [1, 2, 4, 8, 16, 32, 64]
+dropout = 0.05
+hidden_size = 64
+series_embedding_dim = 8
+
+# ---------------------------------------------------------------------------
+# Ablations
+# ---------------------------------------------------------------------------
+[[ablations]]
+name = "lookback_96"
+question = "Does a one-day context capture enough, or is the weekly cycle necessary?"
+overrides = { lookback_steps = 96 }
+
+[[ablations]]
+name = "lookback_192"
+question = "Where between one day and one week does the useful context saturate?"
+overrides = { lookback_steps = 192 }
+
+[[ablations]]
+name = "no_cyclic"
+question = "Do the sin/cos temporal channels contribute, or are they redundant?"
+overrides = { cyclic_channels = false }
+
+[[ablations]]
+name = "level_target"
+question = "Does predicting the change from y(t) beat predicting the level?"
+overrides = { delta_target = false }
+
+[[ablations]]
+name = "single_horizon"
+question = "Does a shared multi-horizon representation help, or is one head enough?"
+overrides = { horizons = [1] }
+
+[[ablations]]
+name = "transformer"
+question = "Does attention buy anything over convolution on this data? (Phase 6 input)"
+overrides = { architecture = "transformer" }

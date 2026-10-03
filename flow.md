@@ -994,6 +994,97 @@ timestamps, worst series, and the error profile by hour and month.
 regime report, one error report per model, a summary, and one registry record per
 experiment.
 
+## 10. Phase 5: Energy Demand Dynamics Model
+
+### 10.1 What it adds
+
+Phase 4 established *whether* machine learning helps on this dataset and where. It
+answered that a classical histogram gradient-boosting model beats both neural
+baselines. Phase 5 asks a different question: **does the order of the history carry
+information that a flat vector of lags discards?**
+
+```text
+Phase 4 input   y(t-96) ... y(t-24), y(t-4), y(t-1)   -> 13 features, order-free
+Phase 5 input   [y(t), dy/dt, sin/cos hour, sin/cos day-of-year] x 168 tokens, ordered
+```
+
+### 10.2 Pipeline
+
+```text
+TargetSeries (kW per customer)
+  -> normalise by each series' own rated kW        per-unit, scale known for the horizon
+  -> build_sequence_index()                          ordered windows, per-series expansion,
+                                                      chronological split, causality guard
+  -> token stride 4, INPUTS ONLY                     672 native steps -> 168 tokens;
+                                                      targets stay at native 15-minute steps
+  -> model window x [B, C=6, T=168]
+  -> TCN residual blocks, dilations 1..64, GroupNorm within the window
+  -> per-series embedding added to the trunk
+  -> 3 linear heads -> deltas at h = 1, 4, 96
+  -> yhat(t+h) = y(t) + delta(t+h)                   D-074, the delta parameterisation
+  -> per-unit -> kW by the row's own scale
+  -> evaluate against Phase 4's artifact metrics
+```
+
+Training origins are strided by 4 for compute; validation and test origins keep stride
+1, so the `179,520` evaluated test rows are **the same rows** Phase 4 scored
+(D-073). Checkpoints are selected on validation per-unit MAE; the test split is
+touched once, after selection (D-075).
+
+### 10.3 Modules
+
+| Module | Responsibility |
+|---|---|
+| `ml/sequence.py` | `SequenceConfig`, `build_sequence_index()`, the causality guard, the channel contract, `sequence_version()` |
+| `ml/temporal.py` | `build_model()` for `tcn` and `transformer`; parameter counting; config recording |
+| `ml/training.py` | `fit_temporal_model()`, checkpoint save/restore, early stopping, `evaluate_checkpoint()` |
+| `ml/phase5.py` | the runner, `analyse_predictions()`, `replay_evaluation()`, the Phase 4 comparison |
+| `ml/ablation.py` | the reduced-budget ablation suite and its Markdown table |
+| `config/temporal.py` | strict config loading; every ablation must declare the question it answers |
+
+### 10.4 Results on the shared test split
+
+kW MAE, lower is better, identical `179,520` rows for every row of this table:
+
+| Model | h=1 (15 min) | h=4 (1 h) | h=96 (24 h) |
+|---|---|---|---|
+| persistence | **0.4043** | 0.8897 | 2.4343 |
+| Phase 4 classical GBM | 0.4242 | 0.8579 | **1.5648** |
+| **Phase 5 TCN** | 0.4178 | **0.8307** | 1.6510 |
+| Phase 5 vs GBM | **+1.5%** | **+3.2%** | **-5.5%** |
+
+Recorded verdict: **mixed / partially improves** (D-079). Two of three horizons beat
+gradient boosting; the longest does not. `h=96` is the open problem.
+
+### 10.5 What the ablations measured
+
+Every row trained at the same reduced budget (`2` epochs, training stride `32`), so
+comparisons are valid **within** the table and not against the main run:
+
+| Ablation | Question | Answer |
+|---|---|---|
+| `level_target` | change or level? | **change**, by a wide margin: level costs +253% / +52% / +20% |
+| `no_cyclic` | do sin/cos channels help? | **no** - removing them is 3.6% / 28.7% / 18.6% *better* |
+| `single_horizon` | does trunk sharing help? | **yes** - one head is 38.5% worse at h=1 |
+| `lookback_96` | is one day enough? | **no** - costs +38.3% at h=1, +34.6% at h=96 |
+| `lookback_192` | does the benefit saturate? | **not yet** - still +13.6% / +9.7% against a week |
+| `transformer` | does attention beat convolution? | **not here** - +49.8% at h=1, -6.0% at h=4, +0.6% at h=96 |
+
+Two consequences are carried forward rather than smoothed over. The cyclic channels
+are **not earning their place** but stay in the shipped configuration, because dropping
+them after seeing the test result would be tuning against the test split (D-077), and
+because the ablation budget is too small to settle it. And the transformer result is
+the evidence base for `docs/qwen_energy_requirements.md`.
+
+### 10.6 Entry points
+
+```text
+energy-intel temporal config       resolved experiment configuration
+energy-intel temporal run          train, evaluate, analyse, record
+energy-intel temporal ablate       the ablation suite and its table
+energy-intel temporal experiments  the recorded registry
+```
+
 ## 9. Entry points
 
 ```text

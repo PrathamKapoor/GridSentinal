@@ -1,0 +1,72 @@
+# GridSentinal paper evidence registry.
+#
+# Registers artifacts that are valid evidence for the written record. An entry is only
+# registered if it came from a completed run under a frozen protocol. Three categories are
+# deliberately NOT registered and are listed at the bottom with the reason, because a
+# registry that quietly omits them is indistinguishable from one that forgot them.
+#
+# Regenerate with: energy-intel ablation run && energy-intel ablation report
+
+registry_version: 1
+phase: 10
+phase_title: Controlled feature ablation
+protocol_hash: "472ff9c1b723787ff9e63baca4307ce2e1fbae878b05631f6ede3cbae25973fa"
+
+registered:
+  - id: phase_10_protocol_freeze
+    path: "artifacts/experimental_design/phase_10_ablation_protocol_freeze.yaml"
+    sha256_16: "8f6139ff628bf003"
+    status: official
+    note: "The protocol frozen before official execution: feature sets and checksums, model per target, F01-F06, metrics, seed policy, 0.5% tie-break, and five final-test access flags all set to false."
+  - id: phase_10_selection_freeze
+    path: "artifacts/experimental_design/phase_10_selected_feature_freeze.yaml"
+    sha256_16: "00c724a6250fe540"
+    status: official
+    note: "The feature set chosen on F01-F04, written before F05-F06 were scored."
+  - id: phase_10_result
+    path: "artifacts/phase10/main/result.json"
+    sha256_16: "77286fad59e75567"
+    status: official
+    note: "Every measured fold cell for both targets, with selection, confirmation, incremental effects and retained timestamp-level rows."
+  - id: phase_10_table_classical_load
+    path: "artifacts/research_tables/feature_ablation_classical_h24.csv"
+    sha256_16: "baa6a935aa9ecffb"
+    status: official
+    note: "customer_load at H24: 5 feature sets x 6 folds with the model held fixed."
+  - id: phase_10_table_classical_pv
+    path: "artifacts/research_tables/feature_ablation_classical_h24_pv.csv"
+    sha256_16: "ddbf69f108c82663"
+    status: official
+    note: "pv_generation at H24: 5 feature sets x 6 folds with the model held fixed."
+  - id: phase_10_table_incremental
+    path: "artifacts/research_tables/feature_family_incremental_effects.csv"
+    sha256_16: "1d772333f1f07b09"
+    status: official
+    note: "A->C, C->D, D->E and A vs B as incremental validation-performance differences. Not causal effects."
+  - id: phase_10_completion_report
+    path: "reports/phase_10_completion.md"
+    sha256_16: "9235099bca0ad06e"
+    status: official
+    note: "The phase's status, results, integrity statement and limitations."
+
+not_registered:
+  - id: phase_10_smoke
+    path: "artifacts/phase10/smoke/smoke.json"
+    status: NON_EVIDENCE_SMOKE
+    reason: "Pipeline proof only. Explicitly NOT registered as evidence and excluded from every research table."
+  - id: phase_10_mlp_robustness
+    path: "artifacts/phase10/main/result.json"
+    status: NOT_RUN
+    reason: "The secondary PYTORCH_MLP_V1 arm was not executed. Recorded as NOT RUN rather than approximated."
+  - id: phase_10_wind
+    path: "n/a"
+    status: UNSUPPORTED
+    reason: "wind_generation has no wind asset in SMART-DS v1.0. Not run, not substituted, no evidence."
+
+policy:
+  smoke_results_are_evidence: false
+  incomplete_artifacts_are_evidence: false
+  failed_experiments_are_evidence: false
+  missing_capabilities_are_reported_not_substituted: true
+  registration_requires: >
+    a completed run under a frozen protocol, with the protocol hash recorded

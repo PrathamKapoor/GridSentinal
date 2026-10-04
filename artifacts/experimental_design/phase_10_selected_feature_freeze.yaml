@@ -1,0 +1,109 @@
+freeze_hash: 960fcc75cd819c1d70d0faef78639ca60410f1d2a70cb1ddcf97c6a85330c15a
+freeze_kind: phase10_selected_feature
+note: written after F01-F04 selection and before F05-F06 confirmation. F05-F06 took no part in the choice
+  recorded here and are not unseen test data - they are held-out confirmation folds inside the validation
+  range.
+targets:
+  customer_load:
+    confirmation_folds_excluded_from_selection:
+    - F05
+    - F06
+    feature_set_checksum: 459e84f5a7da
+    final_test_access: LOCKED - not read by any Phase 10 code path
+    fold_mae_f01_f04:
+      A:
+        F01: 0.15595658715177613
+        F02: 0.16167791233474052
+        F03: 0.15895473717800823
+        F04: 0.1643265805805
+      B:
+        F01: 0.1620502633297163
+        F02: 0.15568206223678982
+        F03: 0.16352046215264177
+        F04: 0.15784977340234943
+      C:
+        F01: 0.1565102501489529
+        F02: 0.16269666862529017
+        F03: 0.1601190852771979
+        F04: 0.1653835587018303
+      D:
+        F01: 0.15587401132500645
+        F02: 0.16084341471145772
+        F03: 0.16063831041122062
+        F04: 0.16486695594652376
+      E:
+        F01: 0.15698565226298636
+        F02: 0.1611844810996251
+        F03: 0.1605666353816771
+        F04: 0.1652653330372813
+    mean_mae_f01_f04: 0.16022895431125622
+    model: classical_hist_gbm
+    protocol_hash: 472ff9c1b723787ff9e63baca4307ce2e1fbae878b05631f6ede3cbae25973fa
+    rationale: A selected on F01, F02, F03, F04 by mean MAE; it is within 0.5% of the best absolute set
+      (B) and uses fewer features, so the frozen simplicity tie-break was applied
+    selected_feature_set: A
+    selected_features:
+    - hour_of_day
+    - day_of_week
+    - day_of_year
+    - is_weekend
+    selection_folds:
+    - F01
+    - F02
+    - F03
+    - F04
+    selection_metric: mae
+    target: customer_load
+    tie_break_threshold_relative: 0.005
+  pv_generation:
+    confirmation_folds_excluded_from_selection:
+    - F05
+    - F06
+    feature_set_checksum: 16c669f798b7
+    final_test_access: LOCKED - not read by any Phase 10 code path
+    fold_mae_f01_f04:
+      A:
+        F01: 0.21055209635255887
+        F02: 0.2252152295344258
+        F03: 0.20890555642273786
+        F04: 0.22858526555903827
+      B:
+        F01: 0.15747624497441265
+        F02: 0.15541254335112517
+        F03: 0.16440618744961444
+        F04: 0.15672183768669135
+      C:
+        F01: 0.1917296396580002
+        F02: 0.19977787622318624
+        F03: 0.19058819654474027
+        F04: 0.20218654499501254
+      D:
+        F01: 0.19140663013194004
+        F02: 0.19973623076105634
+        F03: 0.19083468354243813
+        F04: 0.20436765320751338
+      E:
+        F01: 0.19061203686359324
+        F02: 0.19861766055777044
+        F03: 0.18934254842491546
+        F04: 0.2044582228117616
+    mean_mae_f01_f04: 0.1585042033654609
+    model: classical_ridge
+    protocol_hash: 472ff9c1b723787ff9e63baca4307ce2e1fbae878b05631f6ede3cbae25973fa
+    rationale: B selected on F01, F02, F03, F04 by mean MAE and has the lowest mean MAE outright; the
+      simplicity tie-break was not needed
+    selected_feature_set: B
+    selected_features:
+    - value_at_origin
+    - lag_1
+    - lag_4
+    - lag_96
+    - lag_672
+    selection_folds:
+    - F01
+    - F02
+    - F03
+    - F04
+    selection_metric: mae
+    target: pv_generation
+    tie_break_threshold_relative: 0.005

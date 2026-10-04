@@ -41,6 +41,13 @@ logs/*
 # Only .gitkeep files are tracked so the directory conventions exist in git.
 artifacts/*
 !artifacts/.gitkeep
+
+# Research-governance artifacts are small, text-based, and MUST be versioned. A protocol freeze
+# that is not committed governs nothing, and a research table that is not committed cannot be
+# checked against the run that produced it. Large binaries under artifacts/ stay ignored.
+!artifacts/experimental_design/
+!artifacts/research_tables/
+!artifacts/paper_evidence/
 models/*
 !models/.gitkeep
 experiments/*

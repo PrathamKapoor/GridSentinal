@@ -15,7 +15,7 @@ OBSERVE → UNDERSTAND → PREDICT → GENERATE OPTIONS → ATTACK OPTIONS
 
 ---
 
-## Current status: Phase 9 of 20 — FLEXIBILITY ESTIMATION AND CAPABILITY AUDIT
+## Current status: Phase 10 of 20 — CONTROLLED FEATURE ABLATION
 
 **Phases 1-8 complete.** Phase 6 (Qwen specialization) and Phase 7 (learned expert router)
 both returned **negative results that were recorded rather than engineered around**. Phase 8
@@ -518,6 +518,206 @@ impossible for commanding.
 
 Full detail, including the estimator defects found and the regression tests that pin them:
 `docs/flexibility_design.md`.
+
+---
+
+# Running GridSentinal
+
+Every command below was run from this repository and is copy-pasteable into PowerShell. Where
+a capability does not exist it says so rather than offering a command that would fail.
+
+## 1. Where to go, and how to set up
+
+```powershell
+cd C:\Projects\Schneider
+```
+
+The repository ships a virtual environment at `.venv`. If it is missing:
+
+```powershell
+uv venv --python 3.12
+uv pip install -e ".[dev]"
+```
+
+To install the pinned dependency set instead of resolving fresh:
+
+```powershell
+uv sync
+```
+
+Every command below works either as `energy-intel ...` (after `uv pip install -e`, which puts
+the `energy-intel` entry point on PATH) or as the equivalent module invocation, which needs no
+PATH change:
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence <command>
+```
+
+## 2. Optional configuration override
+
+The defaults in `configs/` are the supported configuration. `ENERGY_INTEL_CONFIG` is the only
+environment variable the project reads, and it is optional:
+
+```powershell
+$env:ENERGY_INTEL_CONFIG = "C:\path\to\default.toml"
+```
+
+No credentials are read and none are printed. `.env.example` does not exist because the project
+requires no secrets.
+
+## 3. Health
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence console health
+.venv\Scripts\python.exe -m energy_intelligence console status
+```
+
+`console health` reports system, config, data, models, integrity and current phase.
+`console status` lists every phase with the verdict it actually reached, including the negative
+ones.
+
+## 4. Prepare and check SMART-DS data
+
+The dataset is a public, unauthenticated S3 bucket. No credentials are needed.
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence data fetch
+.venv\Scripts\python.exe -m energy_intelligence data inspect
+.venv\Scripts\python.exe -m energy_intelligence data validate
+.venv\Scripts\python.exe -m energy_intelligence console data
+```
+
+`console data` is the one to read first. It separates what exists from what does not:
+
+```text
+RAW DATA         AVAILABLE
+TARGETS
+  customer_load    SUPPORTED
+  pv_generation    PARTIALLY_SUPPORTED
+  wind_generation  UNSUPPORTED   (no wind asset exists in SMART-DS v1.0)
+```
+
+A missing capability is reported as UNKNOWN, never as zero.
+
+## 5. Forecasting
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence ml config
+.venv\Scripts\python.exe -m energy_intelligence ml run
+.venv\Scripts\python.exe -m energy_intelligence ml experiments
+```
+
+Phase 7 (the expert forecasts) and Phase 8 (uncertainty) build on this:
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence router run
+.venv\Scripts\python.exe -m energy_intelligence uncertainty run
+```
+
+## 6. Uncertainty
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence uncertainty config
+.venv\Scripts\python.exe -m energy_intelligence uncertainty experiments
+```
+
+Phase 8's measured result: coverage within 0.7 percentage points of a nominal 90% at all three
+horizons. It publishes an interval, a width and a calibration status - not a guarantee.
+
+## 7. Flexibility
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence flexibility audit
+.venv\Scripts\python.exe -m energy_intelligence console flexibility
+```
+
+`flexibility audit` runs in about a second, fits nothing, and answers "can any flexibility be
+claimed here?". The console prints the three bases separately and never collapses them:
+
+```text
+PHYSICAL         UNKNOWN
+STATISTICAL      AVAILABLE (behavioural proxy)
+ASSUMED          SCENARIO ONLY
+```
+
+The statistical proxy is **not** dispatchable capacity. On SMART-DS, 0 of 8 flexibility
+dimensions have a physical limit.
+
+## 8. Phase 10 feature ablation
+
+Smoke first - it proves the pipeline and is stamped `NON_EVIDENCE_SMOKE` everywhere:
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence ablation smoke
+```
+
+Then the official grid, selection on F01-F04, confirmation on F05-F06:
+
+```powershell
+.venv\Scripts\python.exe -m energy_intelligence ablation run
+.venv\Scripts\python.exe -m energy_intelligence ablation report
+```
+
+Or through the script, which accepts target and model filters:
+
+```powershell
+.venv\Scripts\python.exe scripts\run_feature_ablation.py --smoke
+.venv\Scripts\python.exe scripts\run_feature_ablation.py --all
+.venv\Scripts\python.exe scripts\run_feature_ablation.py --all --target load
+```
+
+There is deliberately **no** flag to evaluate the final test split. The omission is the control.
+
+## 9. Where results are written
+
+| Path | Contents |
+|---|---|
+| `artifacts/phase7/` | expert forecasts and the router result |
+| `artifacts/phase8/uncertainty-main/` | intervals, bands, calibration result |
+| `artifacts/phase9/flexibility-main/` | capability audit, envelopes, result, summary |
+| `artifacts/phase10/main/result.json` | the Phase 10 grid, selection and confirmation |
+| `artifacts/experimental_design/` | the protocol freeze and the selection freeze |
+| `artifacts/research_tables/` | CSVs of every measured cell |
+| `reports/tables/` | rendered markdown tables |
+| `reports/phase_10_completion.md` | the Phase 10 completion report |
+| `experiments/registry.jsonl` | one record per experiment across all phases |
+| `data/raw/smart_ds/` | the acquired dataset (git-ignored) |
+
+## 10. Tests and compile check
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q --no-header -p no:cacheprovider
+.venv\Scripts\python.exe -m compileall -q src scripts tests
+```
+
+Both are run before every commit. The recorded counts are in the Phase 10 completion report; do
+not trust a stale number, run them.
+
+## 11. Frontend
+
+The frontend is user-owned and was not modified by Phase 10. It is a Vite + React app:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Check `web/package.json` for the exact script names before running.
+
+## Not available yet
+
+| Capability | State |
+|---|---|
+| Real-time or dispatch execution | NOT IMPLEMENTED - roadmap |
+| Physical flexibility for any asset | UNKNOWN on SMART-DS; needs an external source |
+| Guaranteed demand response | NOT IMPLEMENTED |
+| Phase 10 MLP robustness arm | NOT RUN; recorded as such in the completion report |
+| WIND target | UNSUPPORTED; no wind assets in SMART-DS v1.0 |
+| Final-test performance evaluation | LOCKED until a later phase unlocks it |
+| A `LICENSE` file | ABSENT; carried forward as an open item |
+
+---
 
 ## Commands
 

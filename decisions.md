@@ -3036,3 +3036,186 @@ demonstrate dispatch without being able to contaminate a measurement.
 
 **Status:** Accepted
 
+
+## D-121 - Phase 10 is named `feature_ablation`, not `ablation`, because `ml/ablation.py` already exists
+
+**Context:** `src/energy_intelligence/ml/ablation.py` is Phase 5's TCN architecture ablation
+and is imported by `phase5.run_phase5_experiment`. A new package cannot take the name
+`ablation` without shadowing it.
+
+**Decision:** the new package is `src/energy_intelligence/ml/feature_ablation/`. The existing
+module is untouched.
+
+**Rationale:** renaming a module other phases import is a wider blast radius than choosing a
+distinct name, and `ml/ablation.py` means something different from what Phase 10 does.
+
+**Consequence:** `from ...ml.feature_ablation import select` is unambiguous alongside
+`ml.ablation.run_ablations`.
+
+**Status:** Accepted
+
+
+## D-122 - One fit per feature set, scored on every fold
+
+**Context:** the obvious implementation fits inside the fold loop. That fits six times per
+feature set.
+
+**Decision:** fit once on the train split, then score all six folds from the same fitted
+object. `run_feature_set` returns one `FoldResult` per fold.
+
+**Rationale:** the model does not depend on the fold - only the scoring rows do - so fitting per
+fold multiplies cost for no additional information. Measured on this dataset one
+`classical_hist_gbm` fit is 254s against a ridge fit of 0.4s, making the difference between
+~21 minutes and ~2 hours for the classical grid. `run_one` is kept for single-fold callers and
+for tests.
+
+**Consequence:** the official classical grid completes in about 105s, which is what made it
+possible to ship the whole phase inside the time budget.
+
+**Status:** Accepted
+
+
+## D-123 - `value_at_origin` belongs to the lag set, not the calendar set
+
+**Context:** the five feature sets are a nested ladder, and the brief describes set B as
+"autoregressive lags". `value_at_origin` is a fourth candidate that had to be placed.
+
+**Decision:** B = `value_at_origin`, `lag_1`, `lag_4`, `lag_96`, `lag_672`.
+
+**Rationale:** `value_at_origin` reads the target series at or before the origin, exactly as the
+lag terms do. Putting it in A would make `A -> B` a comparison between "calendar only" and
+"history except the present", which is not the question the increment is meant to ask, and would
+make A a mixed family.
+
+**Consequence:** C is a clean union of two disjoint families, and the incremental arithmetic
+A -> C, C -> D, D -> E, A vs B is well defined.
+
+**Status:** Accepted
+
+
+## D-124 - The tie-break compares feature COUNT, and this was a real bug
+
+**Context:** the simplicity tie-break must prefer the set with fewer **features**. The first
+implementation compared `len(set_id)`.
+
+**Decision:** compare `len(members(set_id))`.
+
+**Rationale:** the set ids are `"A"` through `"E"`, so `len("A") == len("B") == 1` and every set
+compared as the same size. The tie-break could therefore never fire. It was caught by a test
+that asserted the tie-break applies to a near-tie, not by reading the code - the loop ran,
+exited on the first iteration and reported a decision that looked reasonable.
+
+**Consequence:** the tie-break works, and it changed the selected feature set for
+`customer_load` from B to A. That is a material difference: B's mean MAE was 0.28% better, which
+is inside the frozen 0.5% tolerance, so the 4-feature calendar set is the correct choice under
+the rule that was frozen before any result was visible.
+
+**Status:** Accepted
+
+
+## D-125 - F05-F06 are called confirmation, never unseen test data
+
+**Context:** the brief asks that F05/F06 be evaluated as post-ablation confirmation and never
+called unseen test data.
+
+**Decision:** the confirmation record carries a `held_out_caveat` field stating they are
+contiguous blocks inside the validation range - held out from selection, but not the final test
+split and carrying no unseen-test claim. A test asserts the phrase is present.
+
+**Rationale:** they genuinely are held out from the selection, which is a real property worth
+reporting. They are also not the benchmark, and conflating the two would let a confirmation
+number be quoted as a test result.
+
+**Consequence:** `reports/tables/feature_ablation_confirmation.md` carries the caveat, and the
+completion report repeats it.
+
+**Status:** Accepted
+
+
+## D-126 - WIND is excluded and reported, not attempted and not substituted
+
+**Context:** the brief names LOAD, WIND and PV as targets. `target_spec("wind_generation")`
+returns status UNSUPPORTED: SMART-DS v1.0 contains no wind assets, wind speed appears only as a
+weather covariate in the solar file, and `metrics.csv` reports 0 wind capacity.
+
+**Decision:** exclude `wind_generation`, record the reason in the protocol freeze, in
+`config/ablation/phase_10.yaml` under `excluded_targets`, and in the completion report. The
+script refuses an explicit `--target wind` with that reason and exits non-zero.
+
+**Rationale:** there is no wind series to forecast. Producing a wind number would require
+inventing one, which is the failure mode this project has refused in every earlier phase.
+
+**Consequence:** two of three targets run. The exclusion is visible in three places rather than
+being an absence a reader has to notice.
+
+**Status:** Accepted
+
+
+## D-127 - The MLP robustness arm is recorded NOT RUN rather than approximated
+
+**Context:** the brief asks for a secondary `PYTORCH_MLP_V1` robustness check with a frozen
+configuration, but also states that MLP training must not prevent the classical ablation,
+documentation, tests and console from shipping.
+
+**Decision:** run the classical grid to completion, ship everything, and record the MLP arm as
+**NOT RUN** in the config, the script's stderr, and the completion report's limitations.
+
+**Rationale:** a half-trained MLP ablation is worse than no MLP ablation, because it produces a
+number that looks like a robustness result and is not one. With a fixed one-hour budget the
+classical grid, the console, the tests and the documentation are worth more than a
+misleading secondary arm.
+
+**Consequence:** Phase 10 ships PARTIAL on one arm and COMPLETE on the rest, stated plainly.
+The frozen MLP configuration checksum is already in the protocol freeze, so the arm can be run
+later without renegotiating the protocol.
+
+**Status:** Accepted
+
+
+## D-128 - The console shows flexibility as three lines and never as one number
+
+**Context:** the frontend consumes backend state, and a console that printed
+`flexibility: 4 kW` would undo Phase 9's central result.
+
+**Decision:** `console flexibility` prints PHYSICAL, STATISTICAL and ASSUMED as three separate
+lines, shows UNKNOWN per basis when Phase 9 has not run, and states that the proxy is never
+reported as dispatchable capacity. A test asserts that the word "dispatchable" appears only
+inside a negation.
+
+**Rationale:** the risk is not that someone reads the docs and misunderstands; it is that a
+summary line makes the distinction invisible at the moment someone is scanning for a number.
+
+**Consequence:** the three-base property is enforced by a test rather than by convention.
+
+**Status:** Accepted
+
+
+## D-129 - Research tables are never written without data, and never from smoke rows
+
+**Context:** the brief lists six table paths and warns against fake rows.
+
+**Decision:** `write_tables` returns an empty mapping when a target has no official rows, skips
+any row tagged `NON_EVIDENCE_SMOKE`, and the report's status line is PARTIAL whenever the grid
+or the confirmation is incomplete. Tests assert both.
+
+**Rationale:** an empty table that looks complete is worse than no table, because it invites a
+reader to treat an absence as a zero.
+
+**Consequence:** the PV and load tables exist because both targets produced official rows; no
+table exists for WIND, and its absence is explained in the completion report.
+
+**Status:** Accepted
+
+
+## D-130 - H24 is horizon step 96, and the mapping is recorded in the freeze
+
+**Context:** the brief names H24. The native resolution is 15 minutes, so 24 hours is 96 steps.
+
+**Decision:** `horizon_steps = 96`, with `horizon_label = "H24"` computed from
+`horizon_steps * 15 / 60` rather than typed in, and both recorded in the protocol freeze.
+
+**Rationale:** a hard-coded "H24" next to a horizon of 96 can drift apart silently. Computing
+the label from the steps makes a mismatch impossible to express.
+
+**Consequence:** the freeze carries both, and the config asserts both.
+

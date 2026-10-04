@@ -1640,6 +1640,108 @@ demonstrating a control workflow but are barred from every real-data path by
 `assert_real_data_mode`.
 
 
+---
+
+# Phase 10: Controlled Feature Ablation
+
+Which predefined feature families actually contribute predictive information when the model
+configuration is held fixed? The feature set is the independent variable; everything else is
+identical by construction.
+
+```text
+                    scripts/run_feature_ablation.py --smoke | --all
+                                     │
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │ PROTOCOL FREEZE (before any measurement)     │  freeze.py
+              │  feature sets + checksums, model per target, │
+              │  F01-F06, metrics, seed, tie-break 0.5%,     │
+              │  final-test access: five flags, all NO       │
+              └──────────────────────┬───────────────────────┘
+                                     │  hash recorded into every artifact
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │ dataset + feature matrix, built ONCE         │  experiment.py
+              │  the full 13-feature matrix is computed and  │
+              │  each set indexes columns, so a shared feature│
+              │  cannot get a different value per set        │
+              └──────────────────────┬───────────────────────┘
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │ ONE fit per feature set on the TRAIN split   │  runner.py
+              │  scored on all six folds                     │  run_feature_set
+              │  timestamp rows retained per fold            │
+              └──────────────────────┬───────────────────────┘
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │ F01-F04 SELECTION, mean MAE                  │  selection.py
+              │  absolute MAE first, then the frozen 0.5%    │
+              │  simplicity tie-break over feature COUNT     │
+              │  refuses F05/F06 as an argument              │
+              └──────────────────────┬───────────────────────┘
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │ SELECTION FREEZE written                     │
+              └──────────────────────┬───────────────────────┘
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │ F05-F06 CONFIRMATION                         │
+              │  held out from selection, NOT unseen test    │
+              └──────────────────────┬───────────────────────┘
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │ tables + reports, from recorded rows only    │  reports/phase10.py
+              │  no table without data, no smoke rows        │
+              └──────────────────────────────────────────────┘
+
+  final test split ──► unreachable: assert_final_test_denied() raises FinalTestAccessError
+                       and no CLI flag exists to request it
+```
+
+### The feature ladder
+
+Every name is an existing `FeatureSpec`. No feature was invented; the four weather-derived
+features are excluded from every set.
+
+```text
+A calendar                4   hour_of_day, day_of_week, day_of_year, is_weekend
+B autoregressive lags     5   value_at_origin, lag_1, lag_4, lag_96, lag_672
+C = A + B                 9
+D = C + rolling          11   + roll_mean_96, roll_std_96
+E = D + ramp             13   + ramp_1, roll_mean_same_hour_7d   (= all non-weather)
+```
+
+### Measured result
+
+```text
+customer_load  classical_hist_gbm   selected A (4 features)   tie-break applied
+pv_generation  classical_ridge       selected B (5 features)   outright
+```
+
+For `customer_load` all five sets fall within 0.9% of each other and the 0.5% simplicity
+tie-break selects the 4-feature calendar set over B, whose mean MAE was 0.28% better. For
+`pv_generation` the lags beat calendar by 27%, which is far outside any tolerance, so B wins
+outright and the full 13-feature set E is **worse** than B alone.
+
+On confirmation, load's selected set was **not** the best on F05-F06. That is kept.
+
+### The console
+
+```text
+energy-intel console health      system, config, data, models, integrity, phase
+energy-intel console config      active config, config dir, feature sets
+energy-intel console data        SMART-DS availability, per target, unknowns
+energy-intel console status      every phase with its real verdict
+energy-intel console flexibility PHYSICAL / STATISTICAL / ASSUMED, three lines, never merged
+energy-intel ablation smoke      non-evidence pipeline check
+energy-intel ablation run        the official grid, then selection, then confirmation
+energy-intel ablation report     the recorded result, and it regenerates the tables
+```
+
+The console is read-only over artifacts earlier phases wrote. It never recomputes a result,
+and it renders a missing measurement as UNKNOWN rather than as zero.
+
+
 ## 9. Entry points
 
 ```text
@@ -1658,6 +1760,15 @@ energy-intel flexibility audit      Phase 9 capability audit, fits nothing
 energy-intel flexibility config     Phase 9 configuration
 energy-intel flexibility run        capability audit, envelope, sealed evaluation
 energy-intel flexibility experiments  the recorded summary
+energy-intel console health     Phase 1-10 system health
+energy-intel console status     every phase and its real verdict
+energy-intel console data       SMART-DS availability and unsupported targets
+energy-intel console config     active config and the Phase 10 feature sets
+energy-intel console flexibility  physical / statistical / assumed, kept separate
+energy-intel console integrity  final-test state and the protocol freeze
+energy-intel ablation smoke     Phase 10 non-evidence pipeline check
+energy-intel ablation run       Phase 10 official grid, selection, confirmation
+energy-intel ablation report    the recorded Phase 10 result
 ```
 
 All are invoked as `energy-intel <group> --<group>-config <path> <subcommand>`, because the

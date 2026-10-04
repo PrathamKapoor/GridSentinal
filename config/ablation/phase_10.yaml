@@ -1,0 +1,177 @@
+# Phase 10 configuration: controlled feature ablation.
+#
+# WHAT THIS IS NOT: it is not a place to tune. The model, its hyperparameters, the seed, the
+# folds, the horizon and the metrics are identical across every feature set, and this file
+# records that. There is deliberately no search section, no per-feature-set override and no
+# per-target hyperparameter block - adding one would be the first step toward the HPO this
+# phase forbids.
+#
+# The authoritative record of the protocol is the frozen YAML at
+# artifacts/experimental_design/phase_10_ablation_protocol_freeze.yaml, which is written
+# before official execution and hashed. This file is the human-readable companion; where the
+# two could disagree, the freeze wins.
+#
+# No absolute machine-specific paths. Resolve everything from the project root.
+
+# ---------------------------------------------------------------------------
+# Task (inherited from Phases 4/5/7/8; validated, not tuned here)
+# ---------------------------------------------------------------------------
+targets:
+  - customer_load        # SUPPORTED
+  - pv_generation        # PARTIALLY_SUPPORTED
+
+# wind_generation is intentionally absent: SMART-DS v1.0 contains no wind assets, so there is
+# nothing to measure. metrics.csv reports 0 wind capacity and wind speed appears only as a
+# weather covariate in the solar file. Excluding it is a data fact, not a scoping choice.
+excluded_targets:
+  wind_generation: >
+    UNSUPPORTED - no wind asset in any acquired scenario; metrics.csv reports 0 wind capacity
+
+horizon_steps: 96          # 96 x 15 minutes = 24 hours, i.e. H24
+horizon_label: H24
+
+# ---------------------------------------------------------------------------
+# Feature sets - a nested ladder built from the existing Phase 4 catalogue
+# ---------------------------------------------------------------------------
+# Every name below is an existing FeatureSpec in energy_intelligence.ml.features. Phase 10 is
+# an ablation study, not feature engineering: no feature is added, and the four weather-derived
+# features are excluded from every set so that "does this family help" is not confounded with
+# "does exogenous information help".
+#
+#   A calendar                4 features
+#   B autoregressive lags     5 features
+#   C A + B                   9
+#   D C + rolling statistics 11
+#   E D + ramp + same-hour   13   (= every non-weather feature in the catalogue)
+#
+# `value_at_origin` sits in B rather than A: it reads the target series at or before the origin,
+# exactly as the lags do, so leaving it out would make A -> B a comparison of "calendar only"
+# against "history except the present".
+feature_sets:
+  A: [hour_of_day, day_of_week, day_of_year, is_weekend]
+  B: [value_at_origin, lag_1, lag_4, lag_96, lag_672]
+  C: [hour_of_day, day_of_week, day_of_year, is_weekend, value_at_origin, lag_1, lag_4, lag_96, lag_672]
+  D: [hour_of_day, day_of_week, day_of_year, is_weekend, value_at_origin, lag_1, lag_4, lag_96, lag_672, roll_mean_96, roll_std_96]
+  E: [hour_of_day, day_of_week, day_of_year, is_weekend, value_at_origin, lag_1, lag_4, lag_96, lag_672, roll_mean_96, roll_std_96, ramp_1, roll_mean_same_hour_7d]
+
+excluded_features:
+  # weather covariates, origin_only availability, excluded by protocol
+  - ghi_at_origin
+  - poa_irradiance_at_origin
+  - temperature_at_origin
+  - wind_speed_at_origin
+
+# ---------------------------------------------------------------------------
+# Models - held fixed, chosen from measured evidence
+# ---------------------------------------------------------------------------
+# Not assumed uniform. Phase 5's registry recorded classical_hist_gbm as the load winner at
+# h=96 and classical_ridge as the PV winner, so the frozen model differs by target. Forcing
+# one model across targets would misrepresent what the repository found.
+primary_model_by_target:
+  customer_load: classical_hist_gbm
+  pv_generation: classical_ridge
+
+secondary_model:
+  id: neural_mlp
+  public_name: PYTORCH_MLP_V1
+  role: robustness check, configuration frozen and reused verbatim
+  status: NOT_RUN          # see reports/phase_10_completion.md, limitations
+
+# Explicitly not used in Phase 10.
+prohibited_models: [lstm, gru, neural_gru]
+
+# ---------------------------------------------------------------------------
+# Folds
+# ---------------------------------------------------------------------------
+# Six contiguous blocks tiling the validation range. F01-F04 tile the first half, F05-F06 the
+# second. Every feature set is scored on the same origin ranges, so no set is advantaged by
+# being evaluated on a different or later period.
+folds:
+  selection: [F01, F02, F03, F04]      # the only folds that may choose a feature set
+  confirmation: [F05, F06]              # held out from selection
+  construction: contiguous blocks tiling the validation origin range
+
+# The final test split is not a fold and is unreachable from Phase 10.
+final_test_access:
+  training: false
+  hpo: false
+  model_selection: false
+  feature_selection: false
+  performance_evaluation: false
+  integrity_audit: historical P9-DEV-002 only
+
+# ---------------------------------------------------------------------------
+# Selection policy - frozen before results are visible
+# ---------------------------------------------------------------------------
+selection:
+  metric: mae
+  aggregation: unweighted mean over the selection folds
+  folds: [F01, F02, F03, F04]
+  tie_break:
+    rule: prefer fewer features
+    relative_mae_tolerance: 0.005        # 0.5%
+    order: absolute MAE decides first; the tolerance only simplifies a near-tie
+    frozen_before_results: true
+    may_rescue_a_materially_worse_set: false
+
+confirmation:
+  folds: [F05, F06]
+  called_unseen_test_data: false
+  caveat: >
+    F05-F06 are contiguous blocks inside the validation range. They are held out from
+    selection, but they are not the final test split and carry no unseen-test claim.
+
+# ---------------------------------------------------------------------------
+# Common-sample policy
+# ---------------------------------------------------------------------------
+# Larger feature sets read longer histories and so have fewer usable origins. Scoring each set
+# on whatever rows it happens to have would compare a model on many rows against a model on
+# few, which is a missing-row study wearing an ablation's clothes.
+common_samples:
+  enabled: true
+  method: intersect usable (origin, series) identity across feature sets
+  record: [target, fold, feature_set, sample_count, timestamp_identity]
+
+# ---------------------------------------------------------------------------
+# Metrics and seed
+# ---------------------------------------------------------------------------
+metrics: [mae, rmse]
+unit: kW
+
+seed_policy:
+  seed: 20260101
+  same_seed_for_every_feature_set: true
+  replicates: 1
+  limitation: >
+    a single seed cannot separate a real feature effect from seed-to-seed variation, and
+    Phase 10 performs no formal significance testing
+
+# ---------------------------------------------------------------------------
+# Evidence classes
+# ---------------------------------------------------------------------------
+evidence:
+  smoke_label: NON_EVIDENCE_SMOKE     # every smoke artifact carries this, permanently
+  official_label: OFFICIAL
+  rule: >
+    smoke results are never registered as official evidence. An artifact is official only if
+    it came from the full grid under the frozen protocol.
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+outputs:
+  artifact_dir: artifacts/phase10
+  protocol_freeze: artifacts/experimental_design/phase_10_ablation_protocol_freeze.yaml
+  selection_freeze: artifacts/experimental_design/phase_10_selected_feature_freeze.yaml
+  research_tables: artifacts/research_tables
+  report_tables: reports/tables
+  completion_report: reports/phase_10_completion.md
+  timestamp_fields:
+    # kept for a future paired significance analysis; cannot be reconstructed afterwards
+    - forecast_origin
+    - target_timestamp
+    - actual
+    - prediction
+    - error
+    - absolute_error
+    - squared_error

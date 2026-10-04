@@ -372,6 +372,34 @@ def build_parser() -> argparse.ArgumentParser:
         "experiments", help="Print the Phase 9 registry records."
     )
 
+    console_parser = subparsers.add_parser(
+        "console",
+        help="Operator and research console: what the system believes, and why.",
+    )
+    console_sub = console_parser.add_subparsers(dest="console_command", required=True)
+    console_sub.add_parser("health", help="System, config, data, models, integrity, phase.")
+    console_sub.add_parser("config", help="Active config, config directory, feature sets.")
+    console_sub.add_parser("data", help="SMART-DS availability, per target, unknowns.")
+    console_sub.add_parser("flexibility", help="Phase 9: physical / statistical / assumed.")
+    console_sub.add_parser("status", help="Every phase's recorded verdict.")
+    console_sub.add_parser("integrity", help="Final-test state and protocol freeze.")
+
+    ablation_parser = subparsers.add_parser(
+        "ablation",
+        help="Phase 10: controlled feature ablation.",
+    )
+    ablation_parser.add_argument(
+        "--ablation-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Reserved for the Phase 10 config; the protocol freeze governs the run.",
+    )
+    ablation_sub = ablation_parser.add_subparsers(dest="ablation_command", required=True)
+    ablation_sub.add_parser("smoke", help="Non-evidence pipeline check.")
+    ablation_sub.add_parser("run", help="The official grid, selection, then confirmation.")
+    ablation_sub.add_parser("report", help="Print the recorded Phase 10 result.")
+
     subparsers.add_parser("init-dirs", help="Create the standard directory layout.")
     subparsers.add_parser("paths", help="Print the standard directory layout.")
 
@@ -1446,6 +1474,180 @@ def _environment(torch_module) -> dict[str, str]:
     }
 
 
+
+def _command_console(args: argparse.Namespace) -> int:
+    """The operator console.
+
+    Read-only over artifacts earlier phases wrote. It never recomputes a result, so it is
+    fast enough to be the first command a new user runs, and it never renders a missing
+    measurement as a zero.
+    """
+    from .console import (
+        Console,
+        format_data_status,
+        format_flexibility,
+        format_health,
+    )
+
+    paths = ProjectPaths.from_root()
+    console = Console(paths.root)
+    command = args.console_command
+
+    if command == "health":
+        from .health import check_health
+
+        report = check_health(None, create_missing_dirs=False)
+        print(format_health(paths.root, report))
+        return _EXIT_OK if report.get("ok") else _EXIT_FAILED
+
+    if command == "data":
+        print(format_data_status(paths.root))
+        return _EXIT_OK
+
+    if command == "flexibility":
+        print(format_flexibility(paths.root))
+        return _EXIT_OK
+
+    if command == "config":
+        summary = console.config_summary()
+        print("CONFIGURATION")
+        print()
+        print(f"  CONFIG DIR          {summary['config_dir']}")
+        print(f"  ENERGY_INTEL_CONFIG {'set' if summary['energy_intel_config_set'] else 'unset (using repo defaults)'}")
+        print(f"  SECRETS PRINTED     {summary['secrets_printed']}")
+        print()
+        print("  FILES")
+        for name in summary["config_files"]:
+            print(f"    {name}")
+        print()
+        print("  PHASE 10 FEATURE SETS")
+        for set_id, entry in summary["feature_sets"].items():
+            print(
+                f"    {set_id}  n={entry['count']:<3} checksum={entry['checksum']}  "
+                f"parent={entry['parent']}"
+            )
+            print(f"       {', '.join(entry['features'])}")
+        print()
+        if summary["phase_10_config"]:
+            cfg = summary["phase_10_config"]
+            print("  PHASE 10 CONFIG")
+            for key, value in cfg.items():
+                print(f"    {key:<20} {value}")
+        else:
+            print(f"  PHASE 10 CONFIG     NOT VALID: {summary['config_error']}")
+        return _EXIT_OK
+
+    if command == "status":
+        payload = console.phase_status()
+        print("PHASE STATUS")
+        print()
+        print(f"  {'PH':<4}{'NAME':<34}{'VERDICT':<14}HEADLINE")
+        print("  " + "-" * 88)
+        for row in payload["phases"]:
+            print(f"  {row['phase']:<4}{row['name']:<34}{row['verdict']:<14}{row['headline']}")
+        print()
+        print(f"  current phase {payload['current_phase']}, {payload['completed_phases']} complete")
+        print("  NEGATIVE means the phase failed to show an effect and that was recorded.")
+        return _EXIT_OK
+
+    # integrity
+    block = console.integrity()
+    print("INTEGRITY")
+    print()
+    print(f"  FINAL TEST          {block['final_test']}")
+    if block.get("protocol_version"):
+        print(f"  PROTOCOL            {block['protocol_version']}")
+    print(f"  PROTOCOL FREEZE     {'present' if block['protocol_freeze_present'] else 'ABSENT'}")
+    print()
+    print("  final-test policy")
+    for key, value in block["final_test_policy"].items():
+        print(f"    {key:<34} {value}")
+    return _EXIT_OK
+
+
+def _command_ablation(args: argparse.Namespace) -> int:
+    """Phase 10: the controlled feature ablation.
+
+    ``ablation run`` has no final-test option. The omission is deliberate: an option that does
+    not exist cannot be reached for by a well-meaning flag, and the fold guard refuses the
+    range at runtime as well.
+    """
+    import sys as _sys
+
+    from .ml.feature_ablation.experiment import run_ablation
+    from .ml.feature_ablation.sets import SET_ORDER
+
+    command = args.ablation_command
+    paths = ProjectPaths.from_root()
+
+    if command == "report":
+        from .reports import write_report, write_tables
+
+        result = paths.artifacts / "phase10" / "main" / "result.json"
+        if not result.is_file():
+            print(
+                "no Phase 10 result recorded yet. Run `energy-intel ablation run` first.",
+                file=_sys.stderr,
+            )
+            return _EXIT_FAILED
+        payload = json.loads(result.read_text(encoding="utf-8"))
+        for row in payload.get("results", []):
+            row.setdefault("evidence_class", payload.get("evidence_class", "OFFICIAL"))
+        for name, path in sorted(write_tables(paths.root, payload).items()):
+            print(f"  wrote {name:<40} {path}")
+        print(f"  wrote {'completion_report':<40} {write_report(paths.root, payload)}")
+        print(f"PHASE 10 - {payload.get('evidence_class', 'UNKNOWN')}")
+        print()
+        for target, record in (payload.get("selection") or {}).items():
+            print(f"  {target}")
+            print(f"    model            {record.get('model', '?')}")
+            print(
+                f"    selected set     {record['selected_feature_set']} "
+                f"(selection-fold mean MAE {record.get('selected_set_mean_mae', float('nan')):.5f})"
+            )
+            print(
+                f"    best absolute    {record['best_absolute_mae']:.5f} "
+                f"from {record['best_absolute_mae_set']}"
+            )
+            print(f"    tie-break used   {record['tie_break']['applied']}")
+            for set_id, value in record["per_set_mean_mae"].items():
+                marker = " <- selected" if set_id == record["selected_feature_set"] else ""
+                print(f"      {set_id}  mean MAE {value:.5f}{marker}")
+            print()
+        for target, record in (payload.get("confirmation") or {}).items():
+            print(f"  {target} confirmation (F05-F06, held out from selection)")
+            print(f"    chosen set best  {record.get('selected_set_was_best_on_confirmation')}")
+            print(f"    relative diff    {record.get('relative_difference_selected_vs_best')}")
+            print()
+        print(f"  protocol hash      {payload.get('protocol_hash')}")
+        print(f"  runtime            {payload.get('seconds')}s")
+        print(f"  result             {result}")
+        return _EXIT_OK
+
+    try:
+        outcome = run_ablation(
+            root=paths.root,
+            sets=SET_ORDER,
+            smoke=(command == "smoke"),
+            log=lambda message: print(message, flush=True),
+        )
+    except Exception as exc:  # noqa: BLE001 - the console must explain, not traceback
+        print(f"{type(exc).__name__}: {exc}", file=_sys.stderr)
+        print("hint: run `energy-intel console status` to see which phases have run.", file=_sys.stderr)
+        return _EXIT_FAILED
+
+    print()
+    print(f"mode {outcome.mode}  evidence {outcome.to_dict()['evidence_class']}")
+    for target, record in outcome.selection.items():
+        print(
+            f"  {target}: selected {record['selected_feature_set']} "
+            f"(mean MAE {record.get('selected_set_mean_mae', float('nan')):.5f}, "
+            f"tie-break applied={record['tie_break']['applied']})"
+        )
+    print(f"  report: energy-intel ablation report")
+    return _EXIT_OK
+
+
 def _command_init_dirs() -> int:
     created = ProjectPaths.from_root().ensure()
     if created:
@@ -1507,6 +1709,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _command_uncertainty(args)
             case "flexibility":
                 return _command_flexibility(args)
+            case "console":
+                return _command_console(args)
+            case "ablation":
+                return _command_ablation(args)
             case "init-dirs":
                 return _command_init_dirs()
             case "paths":

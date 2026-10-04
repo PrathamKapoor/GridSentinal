@@ -1,0 +1,147 @@
+common_sample_policy:
+  enabled: true
+  method: intersect usable (origin, series) identity across feature sets
+  rationale: larger feature sets read longer histories and so have fewer usable origins; scoring each
+    set on whatever rows it has would compare models on different row counts
+  record_fields:
+  - target
+  - fold
+  - feature_set
+  - sample_count
+  - timestamp_identity
+confirmation_folds:
+- F05
+- F06
+feature_set_checksums:
+  A: 459e84f5a7da
+  B: 16c669f798b7
+  C: 1bbfc4724b55
+  D: 3d2e0ad0ac0f
+  E: 70bfcc60cdd2
+feature_sets:
+  A:
+  - hour_of_day
+  - day_of_week
+  - day_of_year
+  - is_weekend
+  B:
+  - value_at_origin
+  - lag_1
+  - lag_4
+  - lag_96
+  - lag_672
+  C:
+  - hour_of_day
+  - day_of_week
+  - day_of_year
+  - is_weekend
+  - value_at_origin
+  - lag_1
+  - lag_4
+  - lag_96
+  - lag_672
+  D:
+  - hour_of_day
+  - day_of_week
+  - day_of_year
+  - is_weekend
+  - value_at_origin
+  - lag_1
+  - lag_4
+  - lag_96
+  - lag_672
+  - roll_mean_96
+  - roll_std_96
+  E:
+  - hour_of_day
+  - day_of_week
+  - day_of_year
+  - is_weekend
+  - value_at_origin
+  - lag_1
+  - lag_4
+  - lag_96
+  - lag_672
+  - roll_mean_96
+  - roll_std_96
+  - ramp_1
+  - roll_mean_same_hour_7d
+final_test:
+  feature_selection_access: false
+  hpo_access: false
+  integrity_audit_access: historical P9-DEV-002 only
+  model_selection_access: false
+  performance_evaluation: false
+  state: LOCKED
+  training_access: false
+fixed_between_feature_sets:
+- model implementation
+- model hyperparameters
+- training procedure
+- feature scaling policy
+- seed
+- forecast horizon
+- temporal folds
+- metrics
+- target definition
+- timestamp policy
+generated_for: gridsentral-phase-10
+horizon_label: H24
+horizon_steps: 96
+metrics:
+- mae
+- rmse
+notes:
+- 'Phase 10 is an ablation study, not feature engineering: every feature name is an existing repository
+  FeatureSpec and no new feature is introduced.'
+- H24 is horizon step 96 at the native 15-minute resolution.
+- A feature family's effect is an incremental validation-performance difference, never a causal effect.
+- F01-F04 select. F05-F06 confirm after selection is frozen. The final test split is read by no Phase
+  10 code path.
+- Single-seed results cannot separate a real feature effect from seed noise; formal significance testing
+  is explicitly out of scope for this phase.
+primary_model_by_target:
+  customer_load: classical_hist_gbm
+primary_model_config_checksums:
+  customer_load: f9d86028c6e0d64e225186f96acb69338b2c59764df79162107f5c4bb34d1310
+primary_model_evidence:
+  customer_load: phase5 registry
+prohibited:
+- Optuna
+- GridSearch
+- RandomSearch
+- feature-specific hyperparameter tuning
+- feature-specific model changes
+- new feature families
+- weather features
+- final-test access of any kind
+protocol_version: phase10-ablation-v1
+secondary_model: neural_mlp
+secondary_model_config_checksum: c8fe83d1b9e9b56158059f7fd890c50c5b91a75951faaca6774a2f5592356d03
+secondary_model_public_name: PYTORCH_MLP_V1
+seed_policy:
+  rationale: one seed, held fixed across feature sets, so the only difference between two rows of the
+    ablation is the feature set
+  replicate_note: 'a single seed is a limitation: a difference smaller than seed-to-seed variation cannot
+    be distinguished from it, and Phase 10 does not run formal significance testing'
+  replicates: 1
+  same_seed_for_every_feature_set: true
+  seed: 20260101
+selection_folds:
+- F01
+- F02
+- F03
+- F04
+selection_metric: mae
+steps_per_day: 96
+targets:
+- customer_load
+tie_break:
+  applied_when: the relative MAE difference between the best set and a simpler set is at or below the
+    tolerance
+  frozen_before_results: true
+  order: compare absolute MAE first, then apply the tolerance to the simpler sets
+  relative_mae_tolerance: 0.005
+  rule: prefer fewer features
+unsupported_targets:
+  wind_generation: no wind assets in SMART-DS v1.0

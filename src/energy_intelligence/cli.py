@@ -333,6 +333,45 @@ def build_parser() -> argparse.ArgumentParser:
         "experiments", help="Print the Phase 8 registry records."
     )
 
+    flexibility_parser = subparsers.add_parser(
+        "flexibility",
+        help=(
+            "Phase 9: physical-capability audit and an uncertainty-aware flexibility "
+            "envelope. Never claims dispatchable capability from observational data."
+        ),
+    )
+    flexibility_parser.add_argument(
+        "--flexibility-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Flexibility experiment config. Defaults to configs/flexibility.toml.",
+    )
+    flexibility_subparsers = flexibility_parser.add_subparsers(
+        dest="flexibility_command", required=True
+    )
+    flexibility_subparsers.add_parser(
+        "config", help="Print the resolved flexibility experiment configuration."
+    )
+    flexibility_subparsers.add_parser(
+        "audit",
+        help=(
+            "Print the physical-capability audit for the dataset, without fitting "
+            "anything. This is the answer to 'can any flexibility be claimed here?'."
+        ),
+    )
+    flexibility_subparsers.add_parser(
+        "run",
+        help=(
+            "Audit capability, fit baseline x granularity envelopes on the calibration "
+            "split, select on the conformity split, evaluate once on the sealed test "
+            "split, and aggregate."
+        ),
+    )
+    flexibility_subparsers.add_parser(
+        "experiments", help="Print the Phase 9 registry records."
+    )
+
     subparsers.add_parser("init-dirs", help="Create the standard directory layout.")
     subparsers.add_parser("paths", help="Print the standard directory layout.")
 
@@ -1036,6 +1075,176 @@ def _command_uncertainty(args: argparse.Namespace) -> int:
     return _command_uncertainty_run(config, paths)
 
 
+def _command_flexibility(args: argparse.Namespace) -> int:
+    """Phase 9: capability audit and an uncertainty-aware flexibility envelope.
+
+    Sub-commands
+    ------------
+    ``config``      resolved experiment configuration
+    ``audit``       the physical-capability audit on its own, fitting nothing
+    ``run``         audit, fit, select on the conformity split, evaluate once on test
+    ``experiments`` the recorded Phase 9 summary
+
+    ``run`` reads Phase 7's cached expert forecasts for panel geometry and Phase 8's
+    published artifact for interval widths. It fits no point-forecast model and refits no
+    uncertainty method, so the only thing that varies between its configurations is the
+    baseline and the calendar granularity the envelope is conditioned on.
+
+    The sealed test split is read once, at the final evaluation, and nothing in the run
+    adjusts to what is found there.
+
+    ``audit`` is separated from ``run`` deliberately. The question "does this dataset
+    support claiming any flexibility at all?" deserves an answer that costs seconds and
+    cannot be mistaken for a fitted result.
+    """
+    from .config.flexibility import load_flexibility_config
+
+    config = load_flexibility_config(args.flexibility_config)
+    paths = ProjectPaths.from_root()
+
+    if args.flexibility_command == "config":
+        print(json.dumps(config.to_dict(), indent=2, sort_keys=True))
+        return _EXIT_OK
+
+    if args.flexibility_command == "audit":
+        from .ml.config_ml_bridge import dataset_config_from
+        from .ml.flexibility.capability import audit_capabilities
+
+        data = dataset_config_from()
+        audit = audit_capabilities(
+            dataset="smartds-load_profiles",
+            version=str(data.version),
+            locator="artifacts/phase9",
+            timestamp="2018-01-01T00:00:00",
+        )
+        payload = audit.to_dict()
+        print(f"{payload['answer']}")
+        print()
+        print(
+            f"{payload['physically_supported']} of {payload['dimensions_audited']} "
+            f"dimensions physically supported; {payload['unknown']} unknown"
+        )
+        print()
+        header = f"{'dimension':<24} {'basis':<20} {'gap':<8} blocks Phase 10"
+        print(header)
+        print("-" * len(header))
+        for record in payload["records"]:
+            print(
+                f"{record['dimension']:<24} {record['basis'].upper():<20} "
+                f"{record['gap_reference']:<8} {record['blocking_for_phase10']}"
+            )
+        print()
+        for note in payload["notes"]:
+            print(f"  - {note}")
+        return _EXIT_OK
+
+    if args.flexibility_command == "experiments":
+        summary = paths.artifacts / "phase9" / config.label / "summary.md"
+        if not summary.is_file():
+            print("no Phase 9 experiment recorded yet", file=sys.stderr)
+            return _EXIT_FAILED
+        print(summary.read_text(encoding="utf-8"))
+        return _EXIT_OK
+
+    return _command_flexibility_run(config, paths)
+
+
+def _command_flexibility_run(config, paths: ProjectPaths) -> int:
+    """Run the Phase 9 experiment over Phase 7's panel and Phase 8's published intervals.
+
+    Args:
+        config: The resolved :class:`FlexibilityExperimentConfig`.
+        paths: The project's standard directory layout.
+
+    Returns:
+        ``0`` on success, ``1`` when an input is missing.
+    """
+    import torch
+
+    from .data.smartds import SmartDsLayout
+    from .ml.config_ml_bridge import dataset_config_from
+    from .ml.flexibility.offline.experiment import run_phase9
+    from .ml.phase5 import load_series_for_experiment
+    from .ml.registry import append_record
+    from .ml.router.cache import load_expert_cache
+
+    torch.set_num_threads(config.torch_threads)
+    root = paths.root
+
+    cache_path = root / config.expert_cache
+    if not cache_path.is_file():
+        print(
+            f"expert cache not found at {cache_path}; run `energy-intel router experts` "
+            f"first - Phase 9 reuses Phase 7's panel geometry rather than rebuilding it",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+
+    uncertainty_path = root / config.uncertainty_artifact
+    if not uncertainty_path.is_file():
+        print(
+            f"Phase 8's artifact not found at {uncertainty_path}; Phase 9 measures its "
+            f"reliance coupling against intervals it reads rather than intervals it refits. "
+            f"Run `energy-intel uncertainty run` first.",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+
+    phase7_path = root / config.phase7_result
+    if not phase7_path.is_file():
+        print(
+            f"Phase 7 result not found at {phase7_path}; Phase 9 rebuilds the fixed "
+            f"ensemble from the weights recorded there, so the point forecast its "
+            f"envelopes sit around cannot drift",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+
+    data = dataset_config_from()
+    layout = SmartDsLayout(
+        data.raw_root, data.version, data.year, data.region,
+        data.subregion, data.scenario, data.substation, data.feeder,
+    )
+    series = load_series_for_experiment(layout, config.temporal_experiment_config())
+    cache = load_expert_cache(cache_path)
+    panel = cache.panel()
+    artifact_dir = paths.artifacts / "phase9" / config.label
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    def log(message: str) -> None:
+        print(message, flush=True)
+        with (artifact_dir / "run.log").open("a", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+
+    log(f"Phase 9: cache {cache.describe()}")
+    result = run_phase9(
+        cache=cache,
+        panel=panel,
+        values=series.normalised().astype("float32"),
+        artifact_dir=artifact_dir,
+        config=config,
+        uncertainty_artifact=uncertainty_path,
+        phase7_result_path=phase7_path,
+        experiment_id=f"phase9-{config.label}",
+        dataset_version=str(cache.metadata.get("index_version", "")),
+        dataset_sha256=str(cache.metadata.get("index_version", "")),
+        published_point_mae=dict(config.published_test_mae or {}),
+        log=log,
+    )
+
+    record = result.to_registry_record()
+    registry_path = paths.experiments / "registry.jsonl"
+    append_record(registry_path, record)
+
+    log("")
+    log(f"verdict: {result.verdict['answer']} - {result.verdict['reading']}")
+    for name, component in result.verdict["components"].items():
+        log(f"  {name}: {component['answer']}")
+    log("")
+    log(f"recorded {record.experiment_id} in {registry_path}")
+    return _EXIT_OK
+
+
 def _command_uncertainty_run(config, paths: ProjectPaths) -> int:
     """Run the Phase 8 experiment over Phase 7's cached expert forecasts.
 
@@ -1296,6 +1505,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _command_router(args)
             case "uncertainty":
                 return _command_uncertainty(args)
+            case "flexibility":
+                return _command_flexibility(args)
             case "init-dirs":
                 return _command_init_dirs()
             case "paths":

@@ -2785,3 +2785,254 @@ decision-assurance layer starts from a measured, calibrated interval rather than
 number this phase invented.
 
 **Status:** Accepted
+
+
+## D-110 - A statistical proxy may not claim a control authority, enforced in the constructor
+
+**Context:** Phase 9 has to represent flexibility. The tempting shape is one number with a
+magnitude, a direction and an authority, and the temptation is to let a behaviourally-derived
+figure carry `SCHEDULEABLE` so a planner can use it directly. That single permission is the
+difference between "demand has moved this much before" and "this much can be commanded", and
+the second is not something observational data can support.
+
+**Choices:** (a) one magnitude with an advisory flag callers are trusted to respect;
+(b) a `FlexibilityBasis` enum with the authority rule enforced in `__post_init__`.
+
+**Selected:** (b). `basis=STATISTICAL_PROXY` with any controllable authority raises
+`DomainValidationError`. `basis=UNKNOWN` may not carry a magnitude at all, so "not known" can
+never be published as "none available".
+
+**Rationale:** a rule in a docstring is a rule a caller forgets under deadline. A rule in the
+constructor is a rule that holds for every caller including future ones, and it fails loudly
+and immediately rather than producing a plausible wrong number.
+
+**Consequence:** Phase 9 publishes a behavioural envelope that cannot be mistaken for
+capability by anyone holding the object. Phase 10 receives a `STATISTICAL_PROXY` /
+`NOT_CONTROLLABLE` figure and must obtain physical limits externally before optimising.
+
+**Status:** Accepted
+
+
+## D-111 - The capability audit runs before any estimation and its "nothing is supported" result is a deliverable
+
+**Context:** the phase could open by estimating an envelope and qualifying the caveat at the
+end, or by first establishing which flexibility dimensions the dataset can support at all.
+
+**Selected:** audit first, and treat "0 of 8 dimensions physically supported" as the phase's
+headline finding rather than as a caveat. `energy-intel flexibility audit` exposes it as a
+sub-command that fits nothing, in about a second.
+
+**Rationale:** if the audit ran last, every number in between would already have been
+interpreted as flexibility by whoever read the first table they saw. Running it first makes
+"no physical flexibility is supported" the frame within which the behavioural numbers are
+read, and separating it into its own command means the question can be answered without any
+risk of it being mistaken for a fitted result.
+
+**Consequence:** the phase's verdict is the weakest component, so it is NO. That is the correct
+outcome for an honest characterisation of this dataset, and Phase 10's prerequisites are
+listed explicitly rather than implied.
+
+**Status:** Accepted
+
+
+## D-112 - Envelope cells are fitted per horizon, not pooled across horizons
+
+**Context:** a calendar slot aggregates roughly 90 days of observations, so pooling every
+horizon into one cell per `(series, slot)` triples the effective sample. The first
+implementation did exactly that.
+
+**Selected:** one independent table per horizon. Cells are keyed `(horizon, series, slot)`,
+and `magnitudes()` takes a horizon argument rather than defaulting.
+
+**Rationale:** the first run returned **the same 4.1622 kW band at h=1, h=4 and h=96**, with
+coverage 0.949 / 0.853 / 0.700. Deviation at h=96 is about four times deviation at h=1, so a
+shared cell must be wide enough for h=96 and the h=1 band over-covers by five points. No
+downstream calibration can repair a band that is ten times too wide at one horizon because it
+was fitted at another. Pooling remains correct for the *baseline*, where a time-of-day profile
+is the same profile at every horizon; it is wrong for the *magnitude*.
+
+**Consequence:** widths are 2.73 / 5.57 / 14.12 kW at h=1/4/96, and per-horizon calibration is
+possible at all.
+
+**Status:** Accepted
+
+
+## D-113 - The envelope uses split-conformal order statistics, with the miss probability split between the tails
+
+**Context:** the band's tails could be empirical quantiles via interpolation, or order
+statistics at a finite-sample-corrected rank.
+
+**Selected:** `upper_index = min(ceil((n+1)(1 - tail)), n) - 1` and
+`lower_index = max(floor((n+1)tail), 1) - 1`, with `tail = (1 - nominal_level) / 2`.
+
+**Rationale:** two defects in one. Using the *total* miss probability as the per-tail quantile
+gives a 90th and a 10th percentile, which is an 80% band labelled 90% - measured in-sample
+coverage was 0.6485, and nothing crashes, the band is simply mislabelled. Separately, an
+interpolated quantile from a handful of observations sits *between* observed points and
+under-covers. The conformal rank guarantees at least nominal coverage however small the cell
+is and degrades to the sample extreme when the cell is too small to promise it.
+
+**Consequence:** the band delivers what it says at nominal 0.90, and `tail_at_saturation`
+records which cells were too thin to reach the rank.
+
+**Status:** Accepted
+
+
+## D-114 - A conformal scale is solved on the conformity split and applied unchanged to test
+
+**Context:** even correctly fitted, the band over-covered the later split by +2.71pp at h=1
+and +3.39pp at h=4 on 179,520 rows - about 47 binomial standard errors. That is a real shift
+between periods, not sampling error, and re-fitting quantiles cannot fix it.
+
+**Choices:** (a) publish the over-covering band and report the miss; (b) solve one symmetric
+scale per horizon on the conformity half; (c) re-fit quantiles on more data and re-read test.
+
+**Selected:** (b). Coverage is monotone non-decreasing in the scale, so a bisection on the
+conformity rows is exact. The scale is then applied to test without adjustment.
+
+**Rationale:** (c) would read the sealed split a second time. (a) would publish a figure whose
+stated level is wrong by three points. The conformity half of the split exists for exactly this
+correction, and using it is what makes the design a three-way split rather than two.
+
+**Consequence:** scales of 0.9184 / 0.9063 / 0.9572 bring sealed-test coverage to 0.9140 /
+0.9110 / 0.8925. h=1 and h=4 remain 0.4-0.4pp outside a 1.0pp tolerance and are reported as
+such: a phase that kept rescaling until the test split passed would be fitting to it.
+
+**Status:** Accepted
+
+
+## D-115 - The reliance coupling is measured and then withheld from the published envelope
+
+**Context:** Phase 8's interval width was to condition the promised flexibility:
+`reliance = clip(trailing_median(normalised_width) / normalised_width, 0.25, 1)`.
+
+**Selected:** compute it, test it on the sealed split, publish the evidence, and **do not apply
+it**. The published envelope is the raw behavioural one.
+
+**Rationale:** two independent reasons. The coupling turned out to be *supported* -
+Spearman +0.393 / +0.246 / +0.312 - so this is not a case of a null result being hidden. But
+the factor was computed and judged post hoc on the sealed split, so applying it would reuse
+test information to construct the quantity under evaluation. Separately, the discount is worth
+12-31% of the band's width; that is not a refinement, it changes what the envelope means, and
+doing that on one post-hoc correlation is the kind of inference this phase exists to refuse.
+
+**Consequence:** Phase 9 publishes evidence that Phase 8's uncertainty does carry information
+about flexibility, and a later phase that wants to apply the discount must calibrate it on
+data disjoint from its evaluation. The trailing reference stays strictly causal, and the floor
+stays at 0.25 because a floor of zero would let a wide interval imply zero flexibility - a
+claim about capability rather than about confidence.
+
+**Status:** Accepted
+
+
+## D-116 - Phase 9 reads Phase 8's published artifact and proves the rows line up
+
+**Context:** the coupling pairs each of Phase 8's widths with a deviation computed here. Those
+two must describe the same row, and Phase 8's artifact covers test rows only while
+`split_parity_check` needs the whole panel.
+
+**Selected:** rebuild the full-panel fixed ensemble from Phase 7's cache and its recorded
+weights; verify it against Phase 7's published MAE to 1e-6 before estimating anything; then
+prove alignment by comparing Phase 8's artifact point forecast against the rebuilt one on the
+test slice, requiring agreement to 1e-9 kW.
+
+**Rationale:** row *counts* are not proof. A permutation preserves the count and the shape, so
+every structural check passes and every interval width is then paired with another row's
+deviation - which would make the coupling's entire verdict meaningless while looking healthy.
+Rebuilding the ensemble also needed the weights in the order Phase 7 recorded them; a first
+attempt multiplied an `[expert, horizon]` matrix with a `"he"` einsum and produced a
+plausible-looking forecast from transposed weights, caught only because the MAE parity check
+runs first (measured maximum relative difference on the corrected build: 0.0%).
+
+**Consequence:** the coupling's verdict rests on a proved row correspondence, and the run
+refuses to start if either check fails.
+
+**Status:** Accepted
+
+
+## D-117 - Stability is measured within a series, and a constant band counts as perfectly stable
+
+**Context:** "is the envelope stable enough for a planner to consume" needs a statistic on the
+band's own smoothness. The natural one is a lag-1 autocorrelation of its width.
+
+**Selected:** compute it **within each series**, each series centred by its own mean and the
+within-series products pooled. A width with no within-series variation scores 1.0 and reports
+`width_is_constant_within_series: True`, rather than an undefined statistic.
+
+**Rationale:** the panel is ordered series-major, so consecutive rows are usually two different
+customers. A lag-1 over the raw row order measures how much one customer's envelope differs
+from the next one's - a statement about the customer mix. That mistake reported an
+autocorrelation near 0.16 for the selected envelope, whose width is in fact constant per
+customer, and would have failed `is_stable` on a completely smooth band. Returning `None` for
+zero variation is equally wrong in the other direction: downstream it reads as "no stability
+evidence" when it is the strongest evidence available.
+
+**Consequence:** `is_stable` is YES for the published envelope, which is true.
+
+**Status:** Accepted
+
+
+## D-118 - A conditional-reference calendar baseline lost to persistence, and the reason is recorded
+
+**Context:** four configurations were fitted on `CAL_FIT` and selected on `CAL_CONF` by lowest
+weighted interval score among configurations inside the coverage tolerance.
+
+**Selected:** `persistence` at the flat `horizon` granularity. Selection is on the weighted
+interval score rather than width, because width alone rewards a band that covers nothing, and
+uncalibrated configurations rank last.
+
+**Rationale:** the calendar variants covered 0.43-0.66. Instructively, `calendar|horizon` had
+a band 4.4 times *wider* than the selected one and covered **less** (0.6579 against 0.9150): a
+mis-centred band is worse than a well-centred narrow one, because conditioning on a calendar
+slot while centring on a pooled median puts a wide band around the wrong number. That is a
+reason to distrust naive slot pooling, not a reason to distrust calendar conditioning in
+general - the finer granularities were also the thinnest cells (median ~11-23 observations),
+which on this dataset is indistinguishable from being less well estimated. The run records
+this rather than presenting the winner as the only sensible choice.
+
+**Consequence:** the published envelope conditions on one value per customer. Extending it to
+a properly conditioned calendar reference is the first thing worth trying with more
+calibration data, and it needs its own measurement rather than an assumption.
+
+**Status:** Accepted
+
+
+## D-119 - The domain layer validates its own magnitudes without a numeric library
+
+**Context:** `FlexibilityEnvelope` was validating per-row magnitudes with numpy, which the
+project's `tests/test_package.py` forbids in the domain layer.
+
+**Selected:** read the grids structurally with a pure-Python `_as_float_grid`, returning shape
+and a row-major flat list, and keep the magnitude fields typed `Any` so callers may pass lists,
+tuples or arrays.
+
+**Rationale:** the rule exists so plain-Python consumers can use the domain objects, and a
+domain object that needs numpy to check its own invariants cannot serve them. The test caught
+the violation, which is the argument for having the rule at all.
+
+**Consequence:** the domain layer imports no ML library again, the invariant test passes, and
+validation messages are slightly more verbose because shapes are read rather than coerced.
+
+**Status:** Accepted
+
+
+## D-120 - Scenario assumptions are a separate entry point and are barred from real-data paths
+
+**Context:** a control workflow needs demonstration values for assets this dataset lacks, and
+those values are assumptions.
+
+**Selected:** `ScenarioAssumptions` with an explicit `scenario_mode` tag;
+`assert_real_data_mode(scenario)` raises `ScenarioViolation` if a scenario reaches a real-data
+path; battery usable energy and rated power must be supplied together; anything derived from a
+scenario is tagged `basis=ASSUMED`, which can carry advisory authority and nothing more.
+
+**Rationale:** the risk is not the scenario, it is a scenario value quietly reaching a measured
+result. A gate that every real-data entry point calls turns that from a review question into a
+type error. Requiring energy and power together stops a demo inventing a battery with unlimited
+power, which is the specific fabrication most likely to be reached for.
+
+**Consequence:** no scenario value appears in any Phase 9 result, and a future phase can
+demonstrate dispatch without being able to contaminate a measurement.
+
+**Status:** Accepted
+

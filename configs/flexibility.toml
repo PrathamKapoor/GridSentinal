@@ -1,0 +1,150 @@
+# Phase 9 experiment: an uncertainty-aware flexibility envelope, and an honest audit of
+# whether this dataset supports claiming any flexibility at all.
+#
+# WHAT THIS PHASE IS NOT ALLOWED TO DO, restated here because the config is the first place
+# a reader checks: it must not turn historical demand variation into a dispatchable
+# capability, and it must not claim a physical limit that the data does not contain. Every
+# estimate this config produces is a behavioural envelope - how far demand has historically
+# moved from its own expected profile - carrying basis=statistical_proxy and
+# authority=not_controllable. The capability audit is what decides whether anything stronger
+# is even arguable, and on SMART-DS nothing is.
+#
+# The task definition is inherited from Phases 5, 7 and 8 for the same reason those phases
+# inherited it: same target, same 40 customers, same horizons, same window, same split
+# fractions, so the rows evaluated here are the rows evaluated there. Phase 9 additionally
+# requires that Phase 8's artifact has exactly one interval column per horizon declared
+# here, or the coupling would pair each width with the wrong deviation.
+#
+# NOTE ON TOML ORDER: every bare key after a table header belongs to that table, so the
+# [published_test_mae] table is last and every scalar precedes it.
+#
+# Unknown keys are REJECTED (D-007).
+
+# ---------------------------------------------------------------------------
+# Task (inherited from Phases 5/7/8; validated, not trusted)
+# ---------------------------------------------------------------------------
+target = "customer_load"
+label = "flexibility-main"
+customer_count = 40
+seed = 20260101
+torch_threads = 8
+
+horizons = [1, 4, 96]
+
+train_fraction = 0.70
+validation_fraction = 0.15
+
+# Same window as Phase 5, so the panel is the same rows. Phase 9 does not read the window:
+# the flexibility envelope is conditioned on calendar position and on Phase 8's interval
+# width, never on a lookback, so a horizon-96 envelope is a claim about next-day demand
+# rather than a carry-forward from yesterday's window.
+lookback_steps = 672
+token_stride = 4
+
+# ---------------------------------------------------------------------------
+# What the envelope is fitted on
+# ---------------------------------------------------------------------------
+# The coverage the published envelope claims. Phase 8 reported a ladder of levels because it
+# was characterising an estimator; Phase 9 publishes one, because an envelope is a claim a
+# planner would act on and publishing several invites picking the convenient one afterwards.
+#
+# 0.90 matches Phase 8's published interval level, so the two artifacts are directly
+# comparable and neither is being flattered by a level chosen after the fact.
+nominal_level = 0.90
+
+# The calendar key the baseline is conditioned on. This is a default, NOT a commitment: the
+# runner fits every granularity and selects on the conformity split, so the field only needs
+# to be a legal starting point and is reported so a reader can see what a run would have
+# chosen before it chose.
+#
+#   horizon                one value per customer, pooled across all times of day
+#   time_of_day            96 slots per customer, shared across weekdays and weekends
+#   day_type_time_of_day   96 slots per customer per day type - the finest offered
+granularity = "day_type_time_of_day"
+
+# The validation split is halved chronologically: this fraction fits the baseline medians
+# and the envelope quantiles, the remainder selects between configurations. They must be
+# disjoint, because an envelope selected on the rows it was fitted to is not a selection.
+#
+# The same caveat Phase 8 recorded applies: Phase 7 fitted the fixed ensemble's weights on
+# the first 70% of validation, so neither half here is entirely free of that fit. The runner
+# reports the point forecast's MAE on both halves and on test, so the overlap is a number in
+# the result rather than an assumption.
+calibration_fit_fraction = 0.5
+
+# How many calibration observations a calendar slot needs before its median is trusted.
+# Below the threshold the run falls back to the customer's own median rather than publishing
+# an estimate from a handful of points, and reports the share of rows that fell back.
+#
+# With 90 days of calibration at 15-minute resolution there are ~90 observations per
+# time-of-day slot per day type, so 5 is a floor for degenerate day-type coverage rather than
+# a threshold this dataset normally reaches.
+min_samples_per_slot = 5
+
+# Bins for the width-versus-deviation reliability table, which is what shows whether a wide
+# envelope really does sit on a large deviation.
+reliability_bins = 10
+
+# ---------------------------------------------------------------------------
+# The uncertainty-to-flexibility coupling (a counterfactual in Phase 9)
+# ---------------------------------------------------------------------------
+# The formula is reliance = clip(causal_trailing_median_normalised_width /
+# normalised_width, reliance_floor, 1), where normalised_width is Phase 8's interval width
+# divided by the row's rated kW.
+#
+# IMPORTANT: Phase 9 measures this coupling and then WITHHOLDS it from the published
+# envelope, for two reasons that are recorded as decisions rather than left to chance. It is
+# not supported by the data - Phase 8's width does not predict realised deviation magnitude
+# here - and even if it were, the factor was computed and tested on the sealed split, so
+# applying it would reuse test information to construct the very quantity being evaluated.
+# These parameters size the counterfactual that is reported.
+#
+# The floor is the discount's lower bound. It is deliberately above zero: a floor of 0 would
+# let a very wide interval imply *zero* flexibility, which is a claim about capability rather
+# than about confidence, and this phase has no evidence for it.
+reliance_floor = 0.25
+
+# Trailing window for the causal reference, in rows. One day of 15-minute steps per customer
+# is 96, so 3840 rows is 40 days of trailing history - long enough to be stable, short
+# enough to track seasonality rather than averaging a whole quarter into one number.
+#
+# Strictly trailing, never centred: a reference that included the current row would make the
+# discount a function of the answer.
+reliance_window_rows = 3840
+reliance_min_periods = 96
+
+# ---------------------------------------------------------------------------
+# Provenance
+# ---------------------------------------------------------------------------
+# Recorded verbatim on the published envelope and on the registry record, so a consumer can
+# tell which run produced the flexibility figures they are holding.
+model_version = "phase9-flexibility-v1"
+model_family = "behavioural_response_envelope"
+
+# ---------------------------------------------------------------------------
+# Inputs (read, never regenerated)
+# ---------------------------------------------------------------------------
+# Phase 7's expert cache, read for the panel geometry, the per-row rated kW and the origins.
+expert_cache = "artifacts/phase7/experts.npz"
+phase7_result = "artifacts/phase7/router-main/result.json"
+
+# Phase 8's published probabilistic forecast artifact, read for the interval widths the
+# coupling consumes. Reading another phase's artifact rather than refitting is what makes
+# Phase 9's numbers describe the forecast Phase 8 actually measured.
+#
+# The runner refuses to proceed if this artifact's row count or horizon set does not match
+# this run's panel: a mismatch would silently pair every width with the wrong deviation,
+# which is the one failure that would make the coupling's verdict meaningless.
+uncertainty_artifact = "artifacts/phase8/uncertainty-main/probabilistic_forecasts.npz"
+
+# ---------------------------------------------------------------------------
+# Phase 7's published fixed-ensemble test MAE, verbatim
+# ---------------------------------------------------------------------------
+# Phase 9's envelopes are measured around Phase 7's fixed ensemble, and Phase 8's artifact
+# carries that ensemble's point forecast. These figures are the parity check: if the point
+# forecast in Phase 8's artifact does not reproduce them, Phase 9 would be describing a
+# forecast that was never published, and the run stops before anything is estimated.
+#
+# 0.39834 kW at h=1, 0.79171 kW at h=4, 1.53990 kW at h=96.
+[published_test_mae]
+fixed_ensemble = { "1" = 0.3983380494202863, "4" = 0.7917144666626339, "96" = 1.5399040140142268 }

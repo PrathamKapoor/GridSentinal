@@ -1527,6 +1527,119 @@ ratio runs 7.8x / 7.8x / 16.0x against error ratios of 7.5x / 7.5x / 11.2x.
 phase's own numbers show it); no aleatoric/epistemic decomposition; coverage is uniform on
 average, not conditional on regime; no decision rule.
 
+---
+
+# Phase 9: Flexibility Estimation and Capability Audit
+
+Phase 9 adds a flexibility representation and an honest audit of what the dataset can support.
+It changes no forecasting behaviour and solves no optimisation problem. The production path is
+untouched; what is new is a claim vocabulary that cannot be misused, and a measurement of
+whether any physical flexibility exists here.
+
+```text
+                     energy-intel flexibility audit
+                                (fits nothing, ~1s)
+                                     │
+                                     ▼
+                  ┌──────────────────────────────────┐
+                  │ capability audit                  │  ml/flexibility/capability.py
+                  │ 8 SMART-DS dimensions              │
+                  │ PHYSICAL / STATISTICAL_PROXY /     │
+                  │ ASSUMED / UNKNOWN                  │
+                  └────────────────┬─────────────────┘
+                                   │  0 of 8 physical, 8 unknown
+                                   ▼
+                  ┌──────────────────────────────────┐
+                  │ demand reconstruction             │  ml/flexibility/demand.py
+                  │ values x rated kW                 │
+                  │ verified against panel targets    │
+                  └────────────────┬─────────────────┘
+                                   │  0.0 kW gap / 359,040 rows
+                                   ▼
+     Phase 7 experts.npz ──►┌───────────────────────────┐   Phase 8 artifact ──┐
+     (panel, rated kW,      │ CAL_FIT 89,760 rows       │   (published widths) │
+      origins, forecasts)   │  fit baseline x granularity│◄──── row alignment ──┘
+                            │  fit envelope per horizon  │        proved to 1e-9 kW
+                            └─────────────┬─────────────┘
+                                          ▼
+                            ┌───────────────────────────┐
+                            │ CAL_CONF 89,760 rows      │
+                            │  select by interval score │
+                            │  solve conformal scale    │
+                            └─────────────┬─────────────┘
+                                          ▼
+                            ┌───────────────────────────┐
+                            │ TEST 179,520 rows         │
+                            │  read ONCE                │
+                            │  coverage / sharpness /   │
+                            │  direction / stability    │
+                            │  regime breakdown         │
+                            │  aggregation + naive sum  │
+                            └─────────────┬─────────────┘
+                                          ▼
+                            ┌───────────────────────────┐
+                            │ verdict: weakest component│  offline/verdict.py
+                            │ every figure STATISTICAL_ │
+                            │ PROXY / NOT_CONTROLLABLE   │
+                            └───────────────────────────┘
+```
+
+### The claim vocabulary, enforced in the constructor
+
+`domain/flexibility.py` is where a claim cannot be smuggled in. Three rules, all in
+`__post_init__`:
+
+| rule | what it stops |
+|---|---|
+| `STATISTICAL_PROXY` may not carry a controllable authority | "demand moved this much before" becoming "this much can be commanded" |
+| `UNKNOWN` may not carry a magnitude | "not known" being published as "none available" |
+| every estimate is `role=DERIVED` with provenance | a derived figure being written as a measurement |
+
+`FlexibilityEnvelope` serialises `is_dispatchable` explicitly, so a deserialised envelope
+cannot recover an authority it was never allowed to hold.
+
+Direction semantics: `DOWNWARD` reduces net demand; `FLEXIBLE_LOAD_SHIFT` is a signed load
+setpoint so downward gives `as_signed_setpoint() == -5.0` for a 5 kW shed, while
+`NodePower`'s load-is-negative convention gives `as_node_power_delta() == +5.0`.
+
+### Results
+
+**Verdict: NO** - the weakest component, with no physical flexibility supported anywhere.
+
+| horizon | coverage @90% | error | mean width kW | width/MAE | WIS kW | up cov | down cov |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.9140 | +0.0140 | 2.7258 | 6.742 | 3.9853 | 0.9079 | 0.9048 |
+| 4 | 0.9110 | +0.0110 | 5.5658 | 6.256 | 7.7263 | 0.9103 | 0.9101 |
+| 96 | 0.8925 | -0.0075 | 14.1165 | 5.799 | 18.0102 | 0.8969 | 0.8819 |
+
+Selected on the conformity split: `persistence` at the flat `horizon` granularity, with
+conformal scales 0.9184 / 0.9063 / 0.9572 applied unchanged to test.
+
+The band is roughly **six times wider than the mean absolute deviation it bounds**. That is what
+90% two-sided coverage costs on near-symmetric heavy-tailed deviations, and it makes the envelope
+a containment statement rather than a planning resolution.
+
+Aggregation shows 99% diversification against a naive sum ~100x larger (pairwise correlation
+-0.0000). That is a statement about independence, not headroom, and the pooled band covers
+*worse* than the individual ones - the same fact that makes pooling defensible for containment
+makes commanding all members at once impossible.
+
+### The uncertainty coupling, measured and withheld
+
+`reliance = clip(trailing_median(normalised_width) / normalised_width, 0.25, 1)`, strictly
+trailing. It is **supported** on this data (Spearman +0.393 / +0.246 / +0.312) and still
+**withheld**: the factor was judged post hoc on the sealed split, so applying it would reuse
+test information to build the quantity under evaluation, and it is worth 12-31% of band width -
+a change in meaning, not a refinement.
+
+### Not claimed
+
+No physical flexibility, no dispatchable resource, no guaranteed demand response, no
+aggregation benefit, no uncertainty discount, no optimisation. Scenario assumptions exist for
+demonstrating a control workflow but are barred from every real-data path by
+`assert_real_data_mode`.
+
+
 ## 9. Entry points
 
 ```text
@@ -1541,6 +1654,10 @@ energy-intel router experts      the expensive expert pass
 energy-intel router run          routing, ablations, sealed evaluation
 energy-intel uncertainty config  Phase 8 configuration
 energy-intel uncertainty run     six interval methods, one sealed evaluation
+energy-intel flexibility audit      Phase 9 capability audit, fits nothing
+energy-intel flexibility config     Phase 9 configuration
+energy-intel flexibility run        capability audit, envelope, sealed evaluation
+energy-intel flexibility experiments  the recorded summary
 ```
 
 All are invoked as `energy-intel <group> --<group>-config <path> <subcommand>`, because the

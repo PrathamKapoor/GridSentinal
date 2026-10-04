@@ -15,7 +15,7 @@ OBSERVE → UNDERSTAND → PREDICT → GENERATE OPTIONS → ATTACK OPTIONS
 
 ---
 
-## Current status: Phase 8 of 20 — CALIBRATED UNCERTAINTY
+## Current status: Phase 9 of 20 — FLEXIBILITY ESTIMATION AND CAPABILITY AUDIT
 
 **Phases 1-8 complete.** Phase 6 (Qwen specialization) and Phase 7 (learned expert router)
 both returned **negative results that were recorded rather than engineered around**. Phase 8
@@ -32,6 +32,7 @@ horizons, on the sealed test split.
 | 6 | Qwen3-1.7B domain specialization | **Complete — negative result** |
 | 7 | Heterogeneous Energy Expert Router (MoE) | **Complete — negative result** |
 | 8 | Calibrated uncertainty / prediction intervals | **Complete — YES, with one negative finding** |
+| 9 | Uncertainty-aware flexibility estimation + capability audit | **Complete — NO: no physical flexibility is supported by this dataset** |
 | 9 | Flexibility modelling | Representation only; **battery dispatch unavailable (G-01)** |
 | 10 | Optimization / decision engine | Not started |
 | 11 | Digital twin | Not started; needs a loss model (G-06) and produced state |
@@ -445,6 +446,79 @@ uv run python -m energy_intelligence uncertainty experiments
 `router run` and `uncertainty run` require `artifacts/phase7/experts.npz` and
 `artifacts/phase7/router-main/result.json`, so run `router experts` and `router run` first.
 
+## Phase 9: what this dataset can and cannot say about flexibility
+
+**Verdict: NO.** A behavioural flexibility envelope was estimated, calibrated and evaluated
+once on a sealed split. **No physical flexibility is supported by SMART-DS**, so nothing
+dispatchable is claimed — and the domain contract *refuses* to build an object that says
+otherwise.
+
+> Can a flexibility envelope be estimated from this data, is it usable and directional, and is
+> any flexibility physically supported?
+
+| component | answer | what decided it |
+|---|---|---|
+| `physical_support` | **NO** | 0 of 8 flexibility dimensions carry evidence of a physical limit and a control interface |
+| `can_be_estimated` | **PARTIALLY** | sealed-test coverage within 1.4pp / 1.1pp / 0.75pp of nominal at h=1 / h=4 / h=96 (tolerance 1.0pp) |
+| `is_directional` | **PARTIALLY** | per-direction conditional coverage 0.882–0.910 against a nominal of 0.900 |
+| `is_stable` | **YES** | width is constant within each customer; within-series lag-1 autocorrelation 1.0 |
+| `uncertainty_is_informative` | **YES** | Spearman(Phase 8 width, realised deviation) = +0.393 / +0.246 / +0.312 |
+| `aggregation_creates_capability` | **NO** | aggregating historical variation cannot create the ability to command anything |
+
+The verdict is the **weakest** component. Reporting a strong phase verdict here would mean
+carrying a physical claim on a proxy, which is the specific failure this phase exists to
+prevent.
+
+```bash
+energy-intel flexibility audit      # the capability table, fits nothing, ~1s
+energy-intel flexibility run        # the full phase, ~7 minutes
+```
+
+**The audit is the real result.** All eight SMART-DS dimensions are `UNKNOWN`, each pointing at
+a documented gap: batteries report `State=IDLING` with ratings only and one `kWhStored` scalar
+and no SOC series (G-01); no per-node power-flow time series exists (G-02); the feeder's 1,216
+declared PV systems are not the one measured 1,000 kW array (G-03); there is no EV, HVAC,
+interruptible-load or demand-response record at all (G-07 through G-10). **Consumption is not
+controllability**, and losses are unmodelled at 3.2175% (G-06), so no feeder limit is derivable
+even in principle.
+
+What *is* measurable is a **behavioural envelope**: how far a customer's demand has historically
+moved from its own expected profile.
+
+| horizon | coverage @90% | error | mean width kW | width/MAE | WIS kW | up cov | down cov |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.9140 | +0.0140 | 2.7258 | 6.742 | 3.9853 | 0.9079 | 0.9048 |
+| 4 | 0.9110 | +0.0110 | 5.5658 | 6.256 | 7.7263 | 0.9103 | 0.9101 |
+| 96 | 0.8925 | −0.0075 | 14.1165 | 5.799 | 18.0102 | 0.8969 | 0.8819 |
+
+Selected on the conformity split: `persistence` at the flat `horizon` granularity, with
+conformal scales 0.9184 / 0.9063 / 0.9572 solved on `CAL_CONF` and applied unchanged to test.
+Demand reconstruction was verified **exactly** — 0.0 kW gap across all 359,040 rows.
+
+**The band is about six times wider than the mean absolute deviation it bounds.** That is what
+90% two-sided coverage costs on near-symmetric heavy-tailed deviations. Read "within ±6 kW" as
+"we were surprised outside ±6 kW about 10% of the time", **not** as "we can move 6 kW".
+
+Three findings worth carrying forward:
+
+- **Pooling horizons destroys calibration.** A first implementation returned the same 4.1622 kW
+  band at h=1, h=4 and h=96, with coverage 0.949 / 0.853 / 0.700. Cells are now fitted per
+  horizon.
+- **A two-sided 90% band needs `alpha/2` per tail.** Using the total miss probability as the
+  per-tail quantile silently produces an **80%** band labelled 90%.
+- **Phase 8's uncertainty *does* predict flexibility here, and the discount is still withheld.**
+  The coupling is supported (+0.393 / +0.246 / +0.312) but was judged post hoc on the sealed
+  split, so applying it would reuse test information to build the quantity under evaluation. It
+  is worth 12–31% of band width — a change in meaning, not a refinement.
+
+Aggregation reports 99% diversification against a naive sum ~100× larger (pairwise correlation
+−0.0000). That is **independence, not headroom** — and the pooled band covers *worse* than the
+individual ones, which is the same fact that makes pooling defensible for containment and
+impossible for commanding.
+
+Full detail, including the estimator defects found and the regression tests that pin them:
+`docs/flexibility_design.md`.
+
 ## Commands
 
 | Command | Purpose |
@@ -506,6 +580,7 @@ reject unknown keys so a typo fails fast rather than being silently ignored.
 │   │   ├── ml.py           Phase 4 experiment shape
 │   │   ├── router.py       Phase 7 experiment shape
 │   │   ├── uncertainty.py  Phase 8 experiment shape
+│   │   ├── flexibility.py  Phase 9 experiment shape
 │   │   └── schema.py       run configuration (Phase 1)
 │   ├── ml/                 Phases 4-8
 │   │   ├── targets.py          which quantities can be forecast, and which cannot
@@ -522,6 +597,9 @@ reject unknown keys so a typo fails fast rather than being silently ignored.
 │   │   ├── pipeline.py         config to real data bridge
 │   │   ├── router/             Phase 7: experts, features, model, routing,
 │   │   │                        training, ensembles, cached forecasts, offline analysis
+│   │   ├── flexibility/        Phase 9: capability audit, demand reconstruction,
+│   │   │                        baselines, envelopes, reliance, aggregation,
+│   │   │                        scenarios, offline runner and verdict
 │   │   └── uncertainty/        Phase 8: intervals, scales, conformal calibration,
 │   │                            pinball quantiles, the published artifact,
 │   │                            evaluation, and the offline runner
@@ -546,16 +624,19 @@ reject unknown keys so a typo fails fast rather than being silently ignored.
 ├── tests/
 │   ├── data/               Phase 3 tests + fixtures extracted from real data
 │   ├── domain/             Phase 2 domain tests
-│   ├── ml/                 Phases 4-8 tests (leakage, splits, metrics, router, uncertainty)
+│   ├── ml/                 Phases 4-9 tests (leakage, splits, metrics, router,
+│   │                        uncertainty, flexibility)
 │   └── *.py                Phase 1 tests and the strict config loaders
 ├── scripts/extract_fixtures.py   builds test fixtures from the real dataset
 ├── scripts/phase7_experts.py     the expensive Phase 7 expert pass
-├── configs/{default,domain,data,ml,ml_pv_nowcast,ml_pv_horizon,router,uncertainty,test}.toml
+├── configs/{default,domain,data,ml,ml_pv_nowcast,ml_pv_horizon,router,uncertainty,
+│            flexibility,test}.toml
 ├── data/raw/smart_ds/       downloaded SMART-DS subset (git-ignored)
 ├── artifacts/data/         Phase 3 reports (git-ignored)
 ├── artifacts/ml/           Phase 4 datasets and reports (git-ignored)
 ├── artifacts/phase7/       expert cache and the router result (git-ignored)
 ├── artifacts/phase8/       intervals, bands and the uncertainty result (git-ignored)
+├── artifacts/phase9/       capability audit, flexibility envelopes and result (git-ignored)
 ├── experiments/registry.jsonl   the one committed experiment record
 └── docs/
     ├── architecture.md              target architecture, component boundaries
@@ -566,7 +647,9 @@ reject unknown keys so a typo fails fast rather than being silently ignored.
     ├── gaps_report.md               what SMART-DS does NOT provide (domain view)
     ├── ml_data_gap_report.md        what it does NOT provide (ML view)
     ├── expert_router_design.md      Phase 7 design and measured result
-    └── uncertainty_design.md        Phase 8 design and measured result
+    ├── uncertainty_design.md        Phase 8 design and measured result
+    └── flexibility_design.md        Phase 9 design, measured result, and the
+                                     estimator defects found along the way
 ```
 
 Subpackages for later phases (`moe/`, `optimization/`, `simulation/`, `agents/`,
@@ -626,6 +709,7 @@ Dev extras: `pytest`, `pytest-cov`.
 | `docs/qwen_energy_requirements.md` | The pre-registered bar a Qwen energy model must clear (written in Phase 5) |
 | `docs/moe_design_requirements.md` | Rewritten from Phase 6: regime heterogeneity, the observable-gate constraint, the rank-2 representation problem, and which MoE designs the evidence supports. §0 now records that Phase 7 superseded its own plan |
 | `docs/expert_router_design.md` | Phase 7: the heterogeneous Energy Expert Router - experts, gate inputs, leakage protection, the measured result, ablations, failure analysis, and what would be worth trying next |
+| `docs/flexibility_design.md` | Phase 9: the capability audit, the claim vocabulary, per-horizon envelopes, the conformity-split conformal scale, the measured-but-withheld uncertainty coupling, aggregation, and the seven estimator defects this phase found in its own machinery |
 | `docs/uncertainty_design.md` | Phase 8: the calibration split, six interval methods, the coverage tolerance, the measured results, the published procedure, and what the phase does not establish |
 | `docs/architecture.md` | Target architecture and component boundaries |
 | `handoff.md` | Current state, what is done and not done, next phase, critical context |

@@ -1,261 +1,264 @@
-# Handoff - Phase 8
+# Handoff - Phase 9
 
 **Project:** Energy Intelligence - adaptive, self-verifying energy management
 **Event:** Yuva Yodha Energy Tech Hackathon 2026, Schneider Electric
-**Current phase:** **Phase 8 of 20 - Calibrated predictive uncertainty - COMPLETE**
-**Previous phases:** Phases 1-7 complete and preserved, zero regressions
+**Current phase:** **Phase 9 of 20 - Uncertainty-aware flexibility estimation - COMPLETE**
+**Previous phases:** Phases 1-8 complete and preserved, zero regressions
 **Date:** 2026-10-04
 **Author of all work:** PrathamKapoor <prathamkapoor027@gmail.com>
 
-> Phase 7 was completed but never handed off; this document covers **both** Phase 7 and
-> Phase 8. Phase 6's handoff is preserved in git history at commit `66bd723`.
+> Phase 9 completed and handed off. Phases 1-8 are preserved with zero regressions.
 
 ---
 
 ## 1. The answer, first
 
-Two questions were answered, one in each phase, and **both are negative where the community
-would expect a positive**.
+**Phase 9 verdict: NO.** A behavioural flexibility envelope was estimated, calibrated, and
+evaluated once on a sealed split. **No physical flexibility is supported by this dataset**, so
+no dispatchable capability is claimed.
 
-> Do heterogeneous forecasting experts have different strengths across energy conditions,
-> and can a learned energy-aware router exploit that?
+| component | answer | what decided it |
+|---|---|---|
+| `physical_support` | **NO** | 0 of 8 flexibility dimensions carry evidence of a physical limit and a control interface |
+| `can_be_estimated` | **PARTIALLY** | sealed-test coverage within 1.4pp of nominal at h=1, 1.1pp at h=4, 0.75pp at h=96 (tolerance 1.0pp) |
+| `is_directional` | **PARTIALLY** | per-direction conditional coverage 0.882-0.910 against a nominal of 0.900 |
+| `is_stable` | **YES** | width is constant within each customer; within-series lag-1 autocorrelation 1.0 |
+| `uncertainty_is_informative` | **YES** | Spearman(Phase 8 width, realised deviation) = +0.393 / +0.246 / +0.312 |
+| `aggregation_creates_capability` | **NO** | aggregating historical variation cannot create the ability to command anything |
 
-**The premise holds; the router does not.** The oracle shows 30-38% of achievable gain is
-present in the expert pool and the experts disagree on 59-75% of rows. A learned,
-energy-aware gate captured **-2% to 13%** of it, and lost to a fixed weighted ensemble at
-**0 of 3** horizons.
+The phase verdict is the weakest component, so the phase reports NO. That is the correct
+outcome for an honest characterisation of this dataset, and it is what makes Phase 10's
+prerequisites explicit rather than implied.
 
-> Can calibrated, informative uncertainty be produced around the energy demand forecast, and
-> does it identify when the forecast cannot be trusted?
+Every published figure is `basis=STATISTICAL_PROXY` with `authority=NOT_CONTROLLABLE`, and the
+domain constructor **refuses** to build an object that says otherwise.
 
-**YES**, on all three components: coverage within 0.0100 of nominal at every horizon for
-three of six methods, a positive rank correlation between interval width and realised error
-at every horizon with the top width decile carrying 4.2-4.8x the mean error, and a 19-27%
-weighted-interval-score improvement over the constant-width baseline.
+## 2. The capability audit, which is the real result
 
-**The most useful finding of Phase 8 is negative:** the default `±1σ` interval - the rule a
-practitioner reaches for without thinking - **fails 11 of 12 coverage cells**, in opposite
-directions at the two ends of the horizon range.
+Run `energy-intel flexibility audit` - it prints this in about a second and fits nothing,
+because the question deserves an answer that cannot be mistaken for a fitted result.
 
----
-
-## 2. The point forecast is fixed, and that is enforced
-
-Neither phase changed what the system forecasts. Phase 8 recovers Phase 7's fitted
-fixed-ensemble weights from `artifacts/phase7/router-main/result.json`, checks them against
-`configs/uncertainty.toml`, and **stops the run if they disagree**. The recovered ensemble
-reproduces Phase 7's published test MAE to **0.0000%**, which is the parity check that makes
-every uncertainty number in the phase comparable with Phase 7's.
-
-This is structural, not a convention. The config loader refuses weights that differ from
-Phase 7's recorded values, refuses a renamed expert pool, and refuses rows that do not sum to
-one.
-
-## 3. The Phase 8 calibration split
-
-```text
-TRAIN          950,400 rows. The experts were fitted here.
-                      |
-VALIDATION     179,520 rows. Expert predictions are out-of-sample.
-    +-- CAL_FIT      first 50%, 89,760 rows. Scale functions, pinball models.
-    +-- CAL_CONF     last  50%, 89,760 rows. Conformity scores, band cut points.
-                      |
-TEST           179,520 rows. Read once, at the end.
-```
-
-Validation is halved rather than reusing Phase 7's 70/30 router split, because the scale must
-not be fitted on rows the ensemble's weights were fitted on.
-
-**The overlap that remains is measured, and it is the headline.** The point forecast's own
-MAE differs between the two validation halves by:
-
-| horizon | CAL_FIT | CAL_CONF | test | fit vs conform |
-|---|---|---|---|---|
-| h=1 | 0.4510 | 0.4154 | 0.3983 | **+8.576%** |
-| h=4 | 0.8000 | 0.8058 | 0.7917 | -0.721% |
-| h=96 | 1.3816 | 1.5528 | 1.5399 | **-11.025%** |
-
-## 4. Methods, and the one idea that separates them
-
-Every symmetric method is `point ± multiplier × scale(row)`.
-
-| Method | `multiplier` from | `scale` | published at |
+| dimension | basis | gap | what is missing |
 |---|---|---|---|
-| `global_residual` | empirical quantile of \|residual\| | constant | no (fails 11/12) |
-| `conformal_global` | `ceil((n+1)(1-α))`-th smallest score | constant | no |
-| `state_residual` | empirical quantile of \|residual\|/scale | learned | no (fails 50% level) |
-| `conformal_state` | conformal quantile of \|residual\|/scale | learned | **h=1, h=4** |
-| `conformal_dispersion` | conformal quantile of \|residual\|/spread | expert spread | **h=96** |
-| `quantile_regression` | pinball-loss model of the residual quantiles | asymmetric | no |
+| `battery_discharge` | UNKNOWN | G-01 | 93/93 `Storage` elements report `State=IDLING`, ratings only, one `kWhStored` scalar; no SOC series, no dispatch record |
+| `battery_charge` | UNKNOWN | G-01 | as above |
+| `ev_charging_shift` | UNKNOWN | G-07 | no EV charging, SOC or departure series |
+| `hvac_setpoint` | UNKNOWN | G-08 | no thermostat, setpoint or indoor temperature |
+| `flexible_load_shift` | UNKNOWN | G-09 | no interruptible or shiftable load identified |
+| `demand_response` | UNKNOWN | G-10 | no DR programme, event log or enrolment field |
+| `der_curtailment` | UNKNOWN | G-03 | the feeder's 1,216 declared PV systems are not the one measured 1,000 kW array |
+| `grid_import_limit` | UNKNOWN | G-02 | no per-node power-flow time series exists |
 
-The learned scale fits `E[|residual| | x]` with an **L1** objective - the conditional median,
-not the mean, because the absolute residual's right tail would otherwise inflate every row's
-width.
+Two facts constrain everything downstream: **consumption is not controllability** (customer
+load is observed consumption, and nothing says any of it can be moved), and **losses are
+unmodelled at 3.2175%** (G-06), so the 0.5 kW network balance tolerance cannot close.
 
-## 5. Results on identical rows
+## 3. The domain contract: how a claim cannot be smuggled in
 
-Coverage at four levels on the sealed test split (`*` = outside the 0.0100 tolerance):
+`src/energy_intelligence/domain/flexibility.py` adds `FlexibilityDirection`,
+`FlexibilityBasis`, `AggregationLevel`, `FlexibilityEstimate` and `FlexibilityEnvelope`. The
+rules live in `__post_init__`, not in a docstring:
 
-| method | h=1 @50/80/90/95 | h=4 | h=96 |
-|---|---|---|---|
-| `global_residual` | 0.6993\* 0.9049\* 0.9604\* 0.9836\* | 0.4717\* 0.7937 0.9121\* 0.9653\* | 0.3586\* 0.6825\* 0.8211\* 0.9071\* |
-| `conformal_global` | 0.5065 0.8047 0.9038 0.9534 | 0.5030 0.7925 0.8976 0.9516 | 0.5076 0.7890\* 0.9012 0.9538 |
-| `state_residual` | 0.5178\* 0.7795\* 0.8692\* 0.9267\* | 0.4879\* 0.7902 0.9051 0.9561 | 0.5716\* 0.8347\* 0.9359\* 0.9728\* |
-| `conformal_state` | 0.5270\* 0.8050 0.9020 0.9536 | 0.5159\* 0.7925 0.8973 0.9479 | 0.5368\* 0.8053 0.9118\* 0.9571 |
-| `conformal_dispersion` | 0.4979 0.8014 0.8996 0.9494 | 0.4575\* 0.7782\* 0.8858\* 0.9401 | 0.4606\* 0.7853\* 0.8934 0.9453 |
-| `quantile_regression` | 0.3803\* 0.7138\* 0.8391\* 0.9164\* | 0.3106\* 0.6556\* 0.7832\* 0.8640\* | 0.2300\* 0.4205\* 0.5780\* 0.7159\* |
+1. **A statistical proxy may not claim a control authority.** `STATISTICAL_PROXY` with
+   `SCHEDULEABLE` raises. This is the one rule that stops "demand moved this much before"
+   becoming "this much can be commanded".
+2. **An unknown may not carry a magnitude.** `basis=UNKNOWN` with `value=0.0` raises, so "not
+   known" can never be published as "none available".
+3. **Every estimate is `role=DERIVED` and carries provenance.** Nothing here writes a
+   measurement.
 
-Published procedure, chosen per horizon at the 90% band level from measured coverage:
+Direction semantics are pinned by the contract: `DOWNWARD` means net demand decreases;
+`FLEXIBLE_LOAD_SHIFT` is a signed load setpoint so a downward 5 kW estimate gives
+`as_signed_setpoint() == -5.0`; `NodePower` treats load as negative so the same estimate gives
+`as_node_power_delta() == +5.0`. Getting this backwards would let a caller shed load by
+increasing it.
 
-| horizon | procedure | coverage @90% | error | ρ(width, error) | top decile |
+## 4. What was estimated, and on which rows
+
+The panel carries targets only at `t+1`, `t+4` and `t+96`, which cannot characterise a day, so
+the full series was rebuilt from the per-unit array and the row's rated kW.
+
+- **Reconstruction verified exactly**: max absolute gap **0.0 kW over all 359,040 rows**. The
+  run stops unless it reproduces the panel.
+- **Chronological partition**: `CAL_FIT` 89,760 rows fits, `CAL_CONF` 89,760 rows selects and
+  calibrates, sealed test 179,520 rows **read once**.
+- **Split parity reported, not assumed**: fixed-ensemble MAE 0.451/0.800/1.382 kW on the fit
+  half against 0.415/0.806/1.553 kW on the conformity half.
+
+## 5. Four configurations, selected on held-out calibration data
+
+Fitted on `CAL_FIT`, evaluated on `CAL_CONF`, selected by lowest weighted interval score among
+configurations inside the coverage tolerance - width alone would reward a band that covers
+nothing, and uncalibrated configurations rank last.
+
+**`persistence` at the flat `horizon` granularity won.** The calendar variants covered
+0.43-0.66. Instructively `calendar|horizon` had a band **4.4x wider** than the selected one and
+covered **less** (0.6579 vs 0.9150): a mis-centred band is worse than a well-centred narrow one,
+because conditioning on a calendar slot while centring on a pooled median puts a wide band
+around the wrong number. That is a reason to distrust naive slot pooling, not to distrust
+calendar conditioning in general - the finer granularities were also the thinnest cells.
+
+## 6. Results on identical rows
+
+| horizon | coverage | error | mean width kW | width/MAE | WIS kW | up cov | down cov | calibrated |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0.9140 | +0.0140 | 2.7258 | 6.742 | 3.9853 | 0.9079 | 0.9048 | no |
+| 4 | 0.9110 | +0.0110 | 5.5658 | 6.256 | 7.7263 | 0.9103 | 0.9101 | no |
+| 96 | 0.8925 | -0.0075 | 14.1165 | 5.799 | 18.0102 | 0.8969 | 0.8819 | **yes** |
+
+Conformal scales solved on `CAL_CONF` and applied unchanged to test: 0.9184 / 0.9063 / 0.9572,
+taking conformity coverage 0.9150 / 0.9237 / 0.9109 to exactly 0.9000.
+
+**The band is about six times wider than the mean absolute deviation it bounds.** That is not a
+defect - it is what 90% two-sided coverage costs on near-symmetric heavy-tailed deviations -
+but it means the envelope is a *containment* statement, not a planning resolution. Read "within
+±6 kW" as "we were surprised outside ±6 kW about 10% of the time", not "we can move 6 kW".
+
+## 7. Five findings that change Phase 10
+
+1. **No physical flexibility exists here.** Phase 10 cannot optimise against a proxy; it needs
+   battery energy *and* power, per-node limits with losses modelled, EV windows, HVAC
+   setpoints, an identified flexible load, and a DR programme - all from an external source.
+2. **Pooling horizons destroys calibration.** The first implementation returned the same
+   4.1622 kW band at every horizon, with coverage 0.949 / 0.853 / 0.700. Cells must be fitted
+   per horizon.
+3. **A two-sided 90% band needs `alpha/2` per tail.** Using the total miss probability as the
+   per-tail quantile silently produces an **80%** band labelled 90%.
+4. **A quantile band does not follow the evaluation period.** The fitted band over-covered by
+   +2.71pp and +3.39pp at h=1 and h=4 - about 47 binomial standard errors. A conformal scale on
+   the conformity split fixes most of it; the residual is reported, not tuned away.
+5. **Uncertainty does predict flexibility here, and the discount is still withheld.** The
+   coupling is *supported* (+0.393/+0.246/+0.312) but was computed and judged post hoc on the
+   sealed split, so applying it would reuse test information to build the quantity under
+   evaluation. It is worth 12-31% of band width - a change in meaning, not a refinement.
+
+## 8. Aggregation: measured, explicitly not capability
+
+| horizon | aggregate up kW | naive sum kW | diversification | mean pairwise corr | aggregate coverage |
 |---|---|---|---|---|---|
-| h=1 | `conformal_state` | 0.9020 | +0.0020 | +0.709 | 4.61x |
-| h=4 | `conformal_state` | 0.8973 | -0.0027 | +0.673 | 4.21x |
-| h=96 | `conformal_dispersion` | 0.8934 | -0.0066 | +0.658 | 4.80x |
+| 1 | 0.527 | 57.713 | 0.9909 | -0.0000 | 0.8212 |
+| 4 | 1.351 | 115.491 | 0.9883 | -0.0000 | 0.8353 |
+| 96 | 1.837 | 271.691 | 0.9932 | -0.0000 | 0.7894 |
 
-## 6. Four findings that change Phase 9
+Diversification of 99% is a statement about **independence, not headroom**. These customers
+move almost independently, so summing individual bands gives a fleet figure ~100x the pooled
+band. That is a real property of the data and it is **not** evidence the fleet can move
+271 kW. Near-zero correlation is why pooling is defensible for a containment statement *and*
+why it is not a capability. `AggregationResult.describe()` carries a `warning` string so a
+consumer reading only the aggregate still sees this.
 
-1. **The default constant-width interval does not transfer across a difficulty shift.** It
-   fails 11 of 12 cells, over-covering at h=1 and under-covering at h=96, and the sign of each
-   failure matches the sign of the split-parity gap. No choice of quantile fixes it. Any
-   future consumer that widens a forecast by a constant factor should be told this.
-2. **Expert disagreement is real but weak, and it decays with horizon.** Spearman +0.41 /
-   +0.25 / +0.18 at h=1 / 4 / 96. Normalising it by the forecast level makes it **negative** at
-   h=4 and h=96 - the level is what the spread is about. As a width scale it is the best
-   available choice at h=96 and produces the widest intervals in the study.
-3. **Width tracks error in every regime at every horizon.** Across the load-level terciles the
-   width ratio runs 7.8x / 7.8x / 16.0x against error ratios of 7.5x / 7.5x / 11.2x. The rows
-   where the interval is narrow are the rows where being wrong costs 0.09 kW. This is the
-   input a decision-assurance layer needs.
-4. **Conditional calibration is not achieved.** Coverage is uniform *on average* and varies by
-   up to 6pp across regime terciles (0.9160 for typical demand against 0.9730 for low, at
-   h=1). The regime labels make this awkward to fix, because they are computed from the target
-   being predicted.
+## 9. Bugs this phase found in its own machinery
 
-## 7. Bugs this phase found in its own machinery
+Each was found by a measurement, not by review, and each is pinned by a named regression test
+in `tests/ml/test_flexibility_offline.py`.
 
-Recorded because each would have produced a plausible, wrong table.
+| defect | how it was caught | consequence had it shipped |
+|---|---|---|
+| calendar baseline indexed by panel row position instead of series index | raised while indexing a 40-series matrix with values up to 89,760 | crash, or a clipped-index wrong number |
+| fixed-ensemble weight matrix transposed in the einsum | Phase 7 MAE parity check, run before estimation | plausible forecast from transposed weights |
+| cells pooled across horizons | identical 4.1622 kW width at all three horizons | h=1 over-covers by 5pp, unfixable downstream |
+| total miss probability used as the per-tail quantile | in-sample coverage 0.6485 against a nominal 0.90 | an 80% band labelled 90% |
+| stability lag-1 taken across the customer boundary | autocorrelation 0.16 for a band that is constant per customer | `is_stable` failed on a perfectly smooth band |
+| domain layer imported numpy | `tests/test_package.py` architecture invariant | plain-Python consumers locked out of the domain |
+| fitted band not corrected for the period shift | coverage +2.71pp / +3.39pp at 47 standard errors | a published figure whose stated level is wrong |
 
-| Defect | How it would have shown |
-|---|---|
-| `quantile_levels` returned one-sided tails while its docstring specified `α/2` | "nominal 90%" intervals covering 80%; a nominal 50% interval with zero width. Only quantile regression would have been silently wrong. |
-| `_assemble_quantile_intervals` refilled one shared bounds array per level | Four nominal levels, four identical intervals, coverage repeating to six decimals. |
-| The artifact published the *baseline* method | `calibration_status` reading `FAIL, FAIL, FAIL` on a published result. |
-| The verdict rewarded the narrowest method regardless of calibration | `is_worth_the_machinery: YES` earned by an interval under-covering by 4pp. |
-| Band cut points pooled across horizons | A band that reported the horizon, not the uncertainty. |
-| The poisoning guard raised `IndexError` instead of naming a column mismatch | A leakage guard failing with a message that reads as a bug in the guard. |
-| `interval_to_estimate` indexed a `[1, 1]` array as if flat | The domain join raised on every single-forecast conversion. |
+## 10. Blocked or out of scope
 
-Plus one Phase 2 defect: `UncertaintyEstimate` counted `lower_bound` and `upper_bound` as two
-separate quantities and refused more than one, so **a prediction interval was the one
-representation the domain could not hold**. Repaired as D-099.
+- **Physical flexibility, dispatchable capability, guaranteed demand response:** not claimed.
+  Each is refused by the domain contract, not merely omitted from the report.
+- **Optimisation:** out of scope. Nothing here solves a dispatch problem; Phase 10 needs
+  physical limits this dataset does not contain.
+- **The reliance discount:** measured and published as evidence, not applied.
+- **Regime-conditioned envelopes:** evaluated per Phase 4/5 tercile but **not fitted**. The
+  terciles are computed from the quantity being predicted, so conditioning on them would be
+  leakage.
+- **A properly conditioned calendar reference:** the loser here was mis-centred, not
+  disproven. Worth trying with more calibration data; it needs its own measurement.
 
-## 8. Ablations
+## 11. Phase 10 requirements and recommendation
 
-Weighted-interval-score improvement over the constant-width baseline:
+Phase 10 needs, from an external source, before it can optimise anything:
 
-| method | h=1 | h=4 | h=96 |
-|---|---|---|---|
-| `conformal_state` | +25.5% | +21.0% | +26.8% |
-| `state_residual` | +26.9% | +20.7% | +27.0% |
-| `quantile_regression` | +33.1% | +18.7% | -0.5% |
-| `conformal_dispersion` | +19.0% | +17.2% | +17.3% |
-| `conformal_global` | +6.2% | -0.6% | +7.2% |
+1. battery usable energy **and** rated power per site (G-01),
+2. per-node power-flow limits with losses modelled (G-02, G-06),
+3. an EV fleet with charging windows, SOC and departure times (G-07),
+4. thermostat setpoints and indoor temperature for any HVAC flexibility (G-08),
+5. an identified interruptible or shiftable load with its limits (G-09),
+6. a demand-response programme with enrolment and event history (G-10).
 
-The finite-sample conformal correction over a plain empirical quantile is worth 6.2% / -0.6% /
-7.2% - **negligible at this sample size**, and the phase reports it as negligible rather than
-claiming the correction matters. It would matter at n=100.
+**Recommendation:** Phase 10 should treat Phase 9's envelope as a *demand-distribution
+description* it can validate against, and source its capability from wherever items 1-6 exist.
+Where a physical limit is available it must carry `basis=PHYSICAL` and a real authority; where
+it is not, the proxy must stay `NOT_CONTROLLABLE`. The scenario entry point exists for
+demonstrating the control workflow without contaminating a measurement.
 
-## 9. Blocked or out of scope
+## 12. Critical context
 
-| Item | Status |
-|---|---|
-| **Coverage guarantee** | **Not claimed.** Conformal's guarantee is conditional on exchangeability; §3's own numbers show the assumption is violated. Every conformal interval carries the caveat in its metadata. |
-| Time-ordered conformal | The recorded direction for earning a real guarantee. Not built. |
-| Aleatoric / epistemic decomposition | Not claimed; see D-105. |
-| Data-quality conditioning | **Impossible on this dataset** - SMART-DS carries no per-timestep quality flags, so the conditioning variable has zero variance. Reported, not simulated (D-106). |
-| Battery dispatch | **Unavailable (G-01)** - unchanged from Phase 3. No flexibility modelling is possible from SMART-DS. |
-| Per-node power balance | **Unavailable (G-02)** - Phase 11 must produce flows, not read them. |
-| Decision rule | Deliberately absent (D-109). Phase 13 composes the interval with its own objective. |
+- **The sealed test split was read once.** The reliance coupling was computed post hoc on it
+  and therefore withheld; the conformal scale was solved on `CAL_CONF` and applied unchanged.
+- **Phase 8's rows are proved, not assumed.** The run refuses to start unless the rebuilt
+  ensemble reproduces Phase 7's published MAE (measured max relative difference **0.0%**) and
+  Phase 8's artifact point forecast matches the rebuilt one on test to 1e-9 kW. Matching row
+  *counts* would not catch a permutation, and a permutation would pair every interval with the
+  wrong deviation.
+- **The run is deterministic** - calendar medians, empirical order statistics and a
+  bisection, no sampling. `ExperimentRecord.seed` is recorded as `None` rather than a number
+  that was never used.
+- **Absolute kW is meaningful per row only.** The group array is not a fleet total.
+- **The domain layer imports no numeric library**, enforced by `tests/test_package.py`.
 
-## 10. Phase 9 requirements and recommendation
+## 13. Repository state
 
-Phase 9 is flexibility modelling. The blocker is unchanged from Phase 3 and is a **data**
-blocker, not a modelling one: SMART-DS supplies a single `kWhStored` nameplate scalar and no
-state-of-charge series, so battery dispatch cannot be derived.
+- Branch `main`, remote `origin` = `https://github.com/PrathamKapoor/GridSentinal.git`.
+- Full suite: **1290 passed, 1 failed** - the failure is
+  `test_the_real_backbone_matches_every_architecture_invariant`, an `OSError 1455` (Windows
+  pagefile exhaustion) loading a large Qwen checkpoint under memory pressure. It **passes in
+  isolation** (21 passed) and is environmental, not a regression.
+- Phase 9 adds 56 tests (29 ML, 27 config) covering the contract, the estimators and every
+  regression listed in §9.
+- Artifacts under `artifacts/phase9/flexibility-main/`; one registry record appended to
+  `experiments/registry.jsonl`.
+- No credentials, caches, raw data or virtual environments are tracked.
 
-**Recommendation:** do not begin Phase 9 modelling until G-01 is resolved by data, because any
-flexibility model built on this dataset would be fitted to a quantity that does not exist.
-Phase 9's honest deliverable on the current dataset is the **representation only** - the
-domain already has `FlexibilityEstimate`, `FlexibilitySource` and the uncertainty container -
-plus an explicit, measured statement of what cannot be filled.
+## 14. How to reproduce
 
-## 11. Critical context
-
-1. **The point forecast must not be refitted.** Phase 8's uncertainty numbers describe Phase 7's
-   fixed ensemble. A different forecast makes every interval in the phase a description of
-   something else.
-2. **The sealed test split has been read once per phase**, at the final evaluation, and nothing
-   adjusts to what is found there. No gate, policy or blend was added after seeing a test
-   result - that is why the shipped Phase 5 configuration is not the best the ablation found
-   (D-077) and the shipped Phase 7 router still has a negative verdict.
-3. **Exchangeability is violated on this data.** Any future claim of a coverage guarantee needs
-   a time-ordered conformal method first.
-4. **CPU-only torch.** The RTX 4050 has ~3.7 GB free, which is why Phase 6 could not attempt
-   LoRA or full fine-tuning. Recorded as untested, not refuted.
-5. **The SMART-DS licence is UNKNOWN.** It is fetched, never redistributed, and must be
-   confirmed before any publication of the data itself.
-
-## 12. Repository state
-
-| Property | Value |
-|---|---|
-| Tracked files | 204 |
-| Largest tracked file | `decisions.md`, 137 KB |
-| Committed binaries | **none** |
-| Committed dataset | **none** - `data/raw/*` is ignored |
-| Committed artifacts | **none** - `artifacts/*`, `models/*`, `logs/*` ignored except `.gitkeep` |
-| Secrets | **none.** No API key, token, private key or credential file is tracked, in the tree or in history. The project requires none at runtime. |
-| Test suite | **1235 passed**, zero regressions against Phases 1-7 |
-| Phase 7 decision records | D-091 … D-098 |
-| Phase 8 decision records | **D-099 … D-109** |
-| Design documents | `docs/expert_router_design.md`, `docs/uncertainty_design.md` |
-| Registry | `experiments/registry.jsonl`, 29 records, project-relative artifact paths |
-
-## 13. How to reproduce
-
-```powershell
-uv venv --python 3.12
-uv sync --extra dev
-uv run pytest                                     # 1235 tests, no dataset needed
-
-# The dataset is fetched, never committed - see README "Data".
-energy-intel data ingest && energy-intel data validate
-
-energy-intel router experts                      # the expensive step (~40 min, CPU)
-energy-intel router run
-energy-intel uncertainty run                     # ~8 min, CPU
+```bash
+energy-intel flexibility audit          # capability table, fits nothing, ~1s
+energy-intel flexibility config         # resolved configuration
+energy-intel flexibility run            # the full phase, ~7 minutes
+energy-intel flexibility experiments   # the recorded summary
 ```
 
-Phase 8 is deterministic for a fixed seed: `tests/ml/test_uncertainty_offline.py` asserts that
-re-running produces an identical comparison table, selection and verdict.
+Inputs, all read and never regenerated: `artifacts/phase7/experts.npz` (panel geometry, rated
+kW, origins, per-expert forecasts), `artifacts/phase7/router-main/result.json` (the recorded
+weights), `artifacts/phase8/uncertainty-main/probabilistic_forecasts.npz` (published interval
+widths), `configs/flexibility.toml`.
 
-## 14. Entry points
+Outputs: `result.json`, `summary.md`, `capability.json`, `flexibility_envelope.npz`,
+`flexibility_envelope.json`, `run.log`.
 
-```text
-energy-intel router config        resolved Phase 7 configuration
-energy-intel router experts       refit the expert pool and cache forecasts (the slow step)
-energy-intel router run           routing, ablations, sealed evaluation
-energy-intel router experiments   the recorded Phase 7 result
+Full suite: `.venv\Scripts\python.exe -m pytest -q --no-header -p no:cacheprovider`
 
-energy-intel uncertainty config   resolved Phase 8 configuration
-energy-intel uncertainty run      six interval methods, one sealed evaluation
-energy-intel uncertainty experiments   the recorded Phase 8 result
-```
+## 15. Entry points
 
----
+| file | role |
+|---|---|
+| `src/energy_intelligence/domain/flexibility.py` | `FlexibilityEstimate`, `FlexibilityEnvelope`, the authority rules |
+| `src/energy_intelligence/domain/enums.py` | `FlexibilityDirection`, `FlexibilityBasis` |
+| `src/energy_intelligence/ml/flexibility/demand.py` | demand reconstruction and calendar slots |
+| `src/energy_intelligence/ml/flexibility/baselines.py` | calendar and persistence baselines |
+| `src/energy_intelligence/ml/flexibility/envelope.py` | per-horizon fit, `conformal_scale` |
+| `src/energy_intelligence/ml/flexibility/reliance.py` | causal coupling and its justification |
+| `src/energy_intelligence/ml/flexibility/capability.py` | the capability audit |
+| `src/energy_intelligence/ml/flexibility/aggregation.py` | pooled envelope beside the naive sum |
+| `src/energy_intelligence/ml/flexibility/scenarios.py` | quarantined assumption mode |
+| `src/energy_intelligence/ml/flexibility/offline/` | analysis, runner and verdict |
+| `src/energy_intelligence/config/flexibility.py` | config and validation |
+| `configs/flexibility.toml` | inherited task, validated not trusted |
+| `docs/flexibility_design.md` | full design, results and reasoning |
+| `decisions.md` | D-110 through D-120 |
 
-## 15. License
+## 16. License
 
-Proprietary. All rights reserved. Recorded as a project fact, not interpreted - no legal claim
-is made in this document.
+No `LICENSE` file exists in this repository. That remains an open item carried forward from
+earlier phases and should be settled before any external distribution.

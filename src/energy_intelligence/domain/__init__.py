@@ -19,7 +19,11 @@ What is defined
       :class:`~energy_intelligence.domain.objectives.Objective` - declared, not
       enforced and not weighted.
     * :class:`~energy_intelligence.domain.uncertainty.UncertaintyEstimate` - the
-      container Phase 8 will fill in.
+      container Phase 8 fills in.
+    * :class:`~energy_intelligence.domain.flexibility.FlexibilityEstimate` - the
+      Phase 9 contract for "how much response capability, on what evidence", which
+      makes ``PHYSICAL`` / ``STATISTICAL_PROXY`` / ``ASSUMED`` / ``UNKNOWN`` and
+      ``UPWARD`` / ``DOWNWARD`` structurally impossible to confuse.
     * :mod:`~energy_intelligence.domain.provenance` - mandatory traceability on
       every datum.
 
@@ -75,6 +79,8 @@ from .enums import (
     AssetType,
     AuthorityLevel,
     ConstraintCategory,
+    FlexibilityBasis,
+    FlexibilityDirection,
     NetworkElementKind,
     ObjectiveCategory,
     ObjectiveDirection,
@@ -85,6 +91,12 @@ from .enums import (
     VariableRole,
 )
 from .errors import DomainError, DomainValidationError
+from .flexibility import (
+    FLEXIBILITY_SCHEMA_VERSION,
+    AggregationLevel,
+    FlexibilityEnvelope,
+    FlexibilityEstimate,
+)
 from .forecasts import Forecast
 from .identifiers import (
     ActionId,
@@ -162,6 +174,13 @@ __all__ = [
     "DEFAULT_TIMESTEP_MINUTES",
     "DEFAULT_HORIZON_STEPS",
     "UncertaintyEstimate",
+    # Phase 9 flexibility contract
+    "AggregationLevel",
+    "FlexibilityBasis",
+    "FlexibilityDirection",
+    "FlexibilityEnvelope",
+    "FlexibilityEstimate",
+    "FLEXIBILITY_SCHEMA_VERSION",
     "TBD_METHOD",
     # topology
     "Node",

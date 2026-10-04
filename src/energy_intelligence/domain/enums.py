@@ -20,6 +20,8 @@ __all__ = [
     "AssetType",
     "AuthorityLevel",
     "ConstraintCategory",
+    "FlexibilityBasis",
+    "FlexibilityDirection",
     "NetworkElementKind",
     "ObjectiveCategory",
     "ObjectiveDirection",
@@ -260,3 +262,78 @@ class ObjectiveDirection(StrEnum):
 
     MINIMIZE = "minimize"
     MAXIMIZE = "maximize"
+
+
+class FlexibilityDirection(StrEnum):
+    """Which way a controllable quantity would have to move.
+
+    **Defined on the controlled quantity's own sign convention, not on which
+    direction is desirable.** The convention here is *net demand (load), positive
+    when consuming*, because that is the quantity a demand-response product acts on
+    and the one :class:`ConstraintCategory`.DEMAND_FLEXIBILITY_LIMIT is denominated
+    in (``Unit.KILOWATT``).
+
+    ===================  ==========================================================
+    DOWNWARD             net demand decreases. For a load, power is shed. This
+                         is the direction a peak-shaving system wants and the one
+                         most demand-response programmes pay for.
+    UPWARD               net demand increases. For a load, power is added, e.g.
+                         to absorb surplus generation.
+    ===================  ==========================================================
+
+    Two other sign conventions exist in this project and they are **opposite** to
+    each other, which is why the mapping is stated rather than assumed:
+
+    * :class:`~energy_intelligence.domain.state.NodePower` takes *load as negative*
+      ("generation and grid import are positive, load and grid export are
+      negative"). Under that convention a DOWNWARD flexibility is a movement of net
+      power **upward**, toward zero.
+    * :class:`ActionType`.FLEXIBLE_LOAD_SHIFT carries a **signed load** setpoint,
+      so DOWNWARD is a **negative** setpoint.
+
+    A magnitude is always non-negative in ``Unit.KILOWATT``; only the mapping to
+    those two conventions carries a sign.
+    """
+
+    UPWARD = "upward"
+    DOWNWARD = "downward"
+
+
+class FlexibilityBasis(StrEnum):
+    """What kind of evidence supports a flexibility figure.
+
+    This is the single most important distinction in Phase 9 and the reason the
+    enumeration exists rather than a boolean "estimated" flag. The failure it exists
+    to prevent is a statistical quantity being read as a physical capability -
+    "the load has moved by 4 kW before" being reported as "4 kW of dispatchable
+    flexibility".
+
+    ====================  ========================================================
+    PHYSICAL              Supported by authoritative control or capability metadata:
+                          a rated power limit, a usable-energy window, a stated
+                          setpoint range. Requires the asset to be one the system
+                          may actually command.
+    STATISTICAL_PROXY     Derived from observed behaviour, e.g. how far a load has
+                          historically departed from its own expected profile. It
+                          describes **behaviour**, not capability: it says the load
+                          *has moved* by this much, never that an operator *can make
+                          it* move by this much.
+    ASSUMED               Declared by a scenario, for demonstration or planning. Not
+                          discovered from data and not evidence about any real asset.
+    UNKNOWN               Not supported by the available data. Carries **no
+                          magnitude**; an unknown cannot have a number.
+    ====================  ========================================================
+
+    The status axes this project already owns are deliberately *not* duplicated
+    here. ``VariableRole.DERIVED`` says what role the variable plays (its own
+    docstring names available flexibility as its example), ``AuthorityLevel`` says
+    how much control the system holds, ``QualityFlag`` describes data condition,
+    and ``StateOrigin`` describes where a state came from. This enum answers only
+    the question none of those answer: *what kind of evidence is behind this
+    number*.
+    """
+
+    PHYSICAL = "physical"
+    STATISTICAL_PROXY = "statistical_proxy"
+    ASSUMED = "assumed"
+    UNKNOWN = "unknown"

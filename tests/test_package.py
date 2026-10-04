@@ -80,7 +80,7 @@ def test_no_ai_or_ml_dependencies_are_imported_at_import_time() -> None:
     assert leaked == "", f"ML dependencies imported at import time: {leaked}"
 
 
-def test_runtime_dependencies_are_exactly_the_agreed_three() -> None:
+def test_runtime_dependencies_are_exactly_the_agreed_set() -> None:
     """Guard the declared dependency surface in pyproject.toml.
 
     Phases 1-3 shipped with **no** runtime dependencies, and that was enforced here.
@@ -102,9 +102,14 @@ def test_runtime_dependencies_are_exactly_the_agreed_three() -> None:
         spec.split(">=")[0].split("==")[0].split("[")[0].strip()
         for spec in data["project"]["dependencies"]
     )
-    assert names == ["numpy", "scikit-learn", "torch"], (
-        "Phase 4 adds exactly three runtime dependencies (decisions.md D-055); "
-        "pandas, matplotlib and any other addition must be justified first"
+    # Phase 4 added numpy / scikit-learn / torch (D-055). Phase 6 added transformers
+    # to load the real Qwen3-1.7B-Base checkpoint, pinned to the floor that
+    # checkpoint's own config.json declares. Anything else - pandas, matplotlib,
+    # a plotting library - must be justified in decisions.md first.
+    assert names == ["numpy", "scikit-learn", "torch", "transformers"], (
+        f"unexpected runtime dependency surface: {names}. Phase 4's three (D-055) plus "
+        "transformers for the Phase 6 checkpoint; pandas, matplotlib and any other "
+        "addition must be justified in decisions.md first"
     )
 
 

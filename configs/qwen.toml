@@ -1,0 +1,164 @@
+# Phase 6 experiment: Qwen3-1.7B-Base energy specialization.
+#
+# The task is inherited from Phases 4 and 5 unchanged - same target, same 40
+# customers, same seed, same horizons, same chronological split fractions - so the
+# evaluated rows are the SAME rows the Phase 4 baselines and the Phase 5 TCN were
+# scored on. Only the model and the compute budget differ. See decisions.md D-081.
+#
+# Unknown keys are REJECTED (D-007). Every ablation must declare the question it
+# answers, or the loader refuses it (D-087).
+
+# ---------------------------------------------------------------------------
+# Task (identical to Phase 4/5, so the row identities are identical)
+# ---------------------------------------------------------------------------
+target = "customer_load"
+label = "qwen-probe"
+customer_count = 40
+commercial_fraction = 0.25
+seed = 20260101
+
+# Native 15-minute steps: 15 min, 1 h, 24 h. Inherited, not redefined.
+horizons = [1, 4, 96]
+train_fraction = 0.70
+validation_fraction = 0.15
+
+# ---------------------------------------------------------------------------
+# Temporal window - identical to Phase 5 so the same windows exist
+# ---------------------------------------------------------------------------
+lookback_steps = 672
+token_stride = 4
+
+# Training origins are strided for compute. VALIDATION AND TEST USE EVERY ORIGIN,
+# so a Phase 6 row can be looked up directly in the Phase 5 checkpoint's index.
+train_origin_stride = 4
+
+# sin/cos of hour-of-day and day-of-year. These matter MORE here than in Phase 5:
+# Qwen's RoPE is a RELATIVE position encoding, so the backbone has no way to know
+# absolute time-of-day except through these channels. Phase 5's ablation found them
+# not earning their place; `no_cyclic` below re-tests that under a transformer.
+cyclic_channels = true
+
+# Predict the change from y(t), as Phase 5 does. Measured there as worth
+# +253% / +52% / +20% versus predicting the level, so it is not a free choice.
+delta_target = true
+
+# ---------------------------------------------------------------------------
+# The numerical bridge (brief sections 13, 14 and 30)
+# ---------------------------------------------------------------------------
+# 168 sampled positions folded 8 at a time -> 21 tokens covering the whole week.
+# Each token is a flattened 8 x channels patch projected linearly into Qwen's
+# 2048-wide residual stream. Qwen's vocabulary embedding is NOT used, and neither
+# is the language-model head: the task is regression, not generation.
+patch_size = 8
+aggregate = "last"
+
+# The front-end projection is fixed (a frozen backbone gives no gradient path to it
+# without backpropagating through 1.7B parameters), so it is seeded rather than
+# learned. Recorded so the feature cache is reproducible.
+projector_seed = 20260101
+
+# Hidden-state indices cached during the one forward pass per window. Caching several
+# makes "which layer carries the forecast signal" an ablation over cached features
+# instead of a second 1.6-hour extraction.
+feature_layers = [8, 16, 24, 28]
+feature_layer = 28
+
+# ---------------------------------------------------------------------------
+# Probe
+# ---------------------------------------------------------------------------
+# [0] is a plain linear probe on the frozen features - the strongest form of the
+# question "are these activations linearly informative about future demand?"
+probe_layers = [0]
+
+# Every input is per-unit, so the magnitude that tells a 1.4 kW household from a
+# 210 kW shop has been divided out. Phase 5's TCN carried an 8-dimensional per-series
+# embedding for exactly this reason; without it here, Qwen would be handicapped
+# against a baseline that was not.
+series_embedding_dim = 8
+
+# The control that decides whether the PRETRAINED weights matter: the same
+# architecture, randomly initialised, same extraction, same probe. Without it, a good
+# result cannot be separated from "any deep random feature map would do".
+random_backbone = true
+random_backbone_seed = 20260102
+
+# ---------------------------------------------------------------------------
+# Subsample sizes - forced by measured compute, not chosen for convenience
+# ---------------------------------------------------------------------------
+# Measured 0.236 s/sample at 21 tokens (fp32, 16 threads, batch 64). The full
+# 237,600 training origins would need 15.6 h of pure forward passes and the full
+# 179,520 test rows 11.8 h. 25,000 rows total costs about 1.6 h per backbone.
+#
+# The consequence is recorded in the artifacts and the handoff: absolute MAE on a
+# subsample is not the Phase 4/5 number, so the PRIMARY result is the paired
+# comparison on identical rows, with a paired bootstrap interval.
+train_rows = 10000
+validation_rows = 5000
+test_rows = 10000
+
+# ---------------------------------------------------------------------------
+# Head training
+# ---------------------------------------------------------------------------
+batch_size = 256
+epochs = 60
+learning_rate = 0.003
+weight_decay = 0.0001
+loss = "l1"
+patience = 10
+min_delta = 0.000001
+max_seconds = 1800.0
+torch_threads = 16
+forward_batch_size = 64
+
+# Frozen features are 2048-dimensional and the probe has thousands of parameters.
+# A PCA basis fitted ON TRAINING ROWS ONLY compresses them before the head sees
+# them, which is the difference between a probe that generalises and one that
+# memorises 10,000 samples. Fitted on train, never on validation or test.
+basis = "pca"
+basis_hidden_size = 256
+
+# The verified base checkpoint. 3.44 GB, never committed (models/* is git-ignored).
+checkpoint_root = "models/qwen3-1.7b-base"
+
+# ---------------------------------------------------------------------------
+# Ablations - each answers one question, none is run for its own sake
+# ---------------------------------------------------------------------------
+# Cost matters here and is not uniform. `layer_*` and `probe_depth` reuse the cached
+# features and are therefore nearly free. `random_backbone` and `no_cyclic` change the
+# input mapping, so each needs its own full extraction pass at about 1.6 h.
+#
+# Two candidate ablations were DELIBERATELY NOT RUN, and saying so is part of the
+# result: `patch_size = 1` (no patching, 168 tokens) would cost roughly 16 h per pass
+# at the measured 2.3 s/sample, and `aggregate = "mean"` needs its own pass because
+# pooling happens inside extraction. Both are recorded in the handoff as open
+# questions rather than quietly omitted.
+
+# THE central question of the phase: does the pretrained representation beat a
+# random deep feature map of identical architecture? Without this arm, a good probe
+# result would be uninterpretable.
+[[ablations]]
+name = "random_backbone"
+question = "Do the pretrained weights contribute anything a random deep feature map of the same architecture would not?"
+overrides = { random_backbone = true, label = "qwen-random" }
+
+# Under a transformer with relative-only positional encoding, do the absolute
+# time-of-day channels start to earn their place? Phase 5 found they did not under a
+# convolution; the architecture changed, so the finding is re-tested rather than
+# assumed to transfer.
+[[ablations]]
+name = "no_cyclic"
+question = "Do absolute time-of-day channels matter under RoPE, which encodes only relative position?"
+overrides = { cyclic_channels = false, label = "qwen-nocyclic" }
+
+# Free: the same cached features read at a different depth.
+[[ablations]]
+name = "layer_16"
+question = "Is the final layer the best readout, or does an intermediate layer carry more forecast signal?"
+overrides = { feature_layer = 16 }
+
+# Free: deeper head on the same cached features. Tests whether the probe was simply
+# under-parameterised, which would otherwise be mistaken for a weak representation.
+[[ablations]]
+name = "probe_depth"
+question = "Was the linear probe under-parameterised, rather than the representation uninformative?"
+overrides = { probe_layers = [0, 128] }

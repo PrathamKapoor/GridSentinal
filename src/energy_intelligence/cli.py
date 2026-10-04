@@ -242,6 +242,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the Phase 5 registry records.",
     )
 
+    qwen_parser = subparsers.add_parser(
+        "qwen",
+        help="Phase 6: Qwen3-1.7B-Base energy specialization.",
+    )
+    qwen_parser.add_argument(
+        "--qwen-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Qwen experiment config. Defaults to configs/qwen.toml.",
+    )
+    qwen_subparsers = qwen_parser.add_subparsers(dest="qwen_command", required=True)
+    qwen_subparsers.add_parser(
+        "config", help="Print the resolved Qwen experiment configuration."
+    )
+    qwen_subparsers.add_parser(
+        "verify",
+        help="Verify the local base checkpoint against the pinned facts.",
+    )
+    qwen_subparsers.add_parser(
+        "inspect",
+        help="Report the backbone architecture and the Phase 7 surgery sites.",
+    )
+    probe_parser = qwen_subparsers.add_parser(
+        "probe",
+        help="Run the probe experiment(s) over the cached frozen features.",
+    )
+    probe_parser.add_argument(
+        "arm",
+        nargs="*",
+        help="Arms to run. Default: the main pretrained probe.",
+    )
+    qwen_subparsers.add_parser(
+        "experiments", help="Print the Phase 6 experiment records."
+    )
+
     subparsers.add_parser("init-dirs", help="Create the standard directory layout.")
     subparsers.add_parser("paths", help="Print the standard directory layout.")
 
@@ -644,6 +680,77 @@ def _command_temporal(args: argparse.Namespace) -> int:
     return _EXIT_OK
 
 
+def _command_qwen(args: argparse.Namespace) -> int:
+    """Phase 6: Qwen3-1.7B-Base energy specialization.
+
+    Sub-commands
+    ------------
+    ``config``      resolved experiment configuration
+    ``verify``      checkpoint verification against the pinned facts
+    ``inspect``     architecture report and the Phase 7 surgery sites
+    ``probe``       the probe experiments over cached frozen features
+    ``experiments`` the recorded Phase 6 results
+
+    ``verify`` and ``inspect`` need the checkpoint but not the dataset, so they work
+    before the SMART-DS subset is present. ``probe`` needs both the checkpoint's
+    cached features and the dataset, and it deliberately never downloads anything:
+    a 3.44 GB fetch should be an explicit, separate step.
+    """
+    from pathlib import Path as _Path
+
+    from .config.qwen import load_qwen_config
+    from .ml.qwen.checkpoint import Qwen3Checkpoint, inspect_architecture
+
+    config = load_qwen_config(args.qwen_config)
+    paths = ProjectPaths.from_root()
+
+    if args.qwen_command == "config":
+        print(json.dumps(config.to_dict(), indent=2))
+        return _EXIT_OK
+
+    checkpoint = Qwen3Checkpoint(_Path(config.checkpoint_root))
+
+    if args.qwen_command == "verify":
+        try:
+            record = checkpoint.verify()
+        except (FileNotFoundError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return _EXIT_FAILED
+        print(json.dumps(record, indent=2, sort_keys=True))
+        return _EXIT_OK
+
+    if args.qwen_command == "inspect":
+        try:
+            checkpoint.verify()
+            backbone = checkpoint.load_backbone()
+        except (FileNotFoundError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return _EXIT_FAILED
+        print(json.dumps(inspect_architecture(backbone), indent=2, sort_keys=True))
+        return _EXIT_OK
+
+    if args.qwen_command == "experiments":
+        summary = paths.artifacts / "phase6" / "experiments.json"
+        if not summary.is_file():
+            print("no Phase 6 experiments recorded yet", file=sys.stderr)
+            return _EXIT_FAILED
+        print(summary.read_text(encoding="utf-8"))
+        return _EXIT_OK
+
+    # probe
+    import subprocess
+    import sys as _sys
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "phase6_probe.py"
+    if not script.is_file():
+        print(f"probe driver not found at {script}", file=sys.stderr)
+        return _EXIT_FAILED
+    completed = subprocess.run(
+        [_sys.executable, str(script), *(args.arm or [])], cwd=Path.cwd()
+    )
+    return completed.returncode
+
+
 def _command_init_dirs() -> int:
     created = ProjectPaths.from_root().ensure()
     if created:
@@ -697,6 +804,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _command_ml(args)
             case "temporal":
                 return _command_temporal(args)
+            case "qwen":
+                return _command_qwen(args)
             case "init-dirs":
                 return _command_init_dirs()
             case "paths":

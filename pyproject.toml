@@ -26,6 +26,11 @@ dependencies = [
     "numpy>=2.0",
     "scikit-learn>=1.5",
     "torch>=2.5",
+    # Phase 6 loads the real Qwen3-1.7B-Base checkpoint. Pinned to the floor the
+    # checkpoint's own config.json declares (transformers_version 4.51.0); no upper
+    # bound is imposed because we need its Qwen3 architecture, not version churn.
+    # pandas is still deliberately absent - transformers does not require it.
+    "transformers>=4.51.0",
 ]
 
 [[tool.uv.index]]

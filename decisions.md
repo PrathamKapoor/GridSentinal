@@ -2072,3 +2072,261 @@ summary includes the fact that the best configuration found was not the shipped 
 (D-077).
 
 **Status:** Accepted
+
+---
+
+## D-080 - Phase 6 foundation checkpoint: Qwen3-1.7B-Base at a pinned revision
+
+**Context:** the phase brief selected Qwen3-1.7B-Base provisionally, from a separate
+foundation-model audit, and required the authoritative model repository to be the
+source of truth for the checkpoint itself rather than for the audit's conclusions.
+
+**Decision:** use `Qwen/Qwen3-1.7B-Base`, pinned to revision
+**`ea980cb0a6c2ae4b936e82123acc929f1cec04c1`**. Verified directly against the Hub:
+architecture `Qwen3ForCausalLM`, 28 layers, hidden 2048, 16 query heads / 8 KV heads
+(GQA), head_dim 128, FFN 6144, vocab 151,936 with **tied** embeddings, context 32,768,
+RoPE theta 1e6 with no scaling, published dtype bfloat16, **Apache-2.0**, **not gated**.
+
+Measured from the downloaded file rather than the model card: 3,441,185,608 bytes in a
+single `model.safetensors`, **310 tensors, all BF16, 1,720,574,976 parameters**, and no
+stored `lm_head` tensor because the embeddings are tied.
+
+The license matches the audit classification, so no stop condition was triggered. The
+revision is pinned rather than tracked because a moving tag would make the experiment
+irreproducible, and the tokenizer's `len` (151,669) is smaller than the embedding rows
+(151,936) - a padding detail that matters for anyone who later tries to use the
+vocabulary head.
+
+**Status:** Accepted
+
+---
+
+## D-081 - The forecasting task is inherited unchanged; only the model differs
+
+**Context:** every claim in this phase is a comparison. A comparison needs an identical
+population, an identical target and identical horizons, or it measures the setup rather
+than the model.
+
+**Decision:** Phase 6 reuses Phase 5's `SequenceConfig` exactly - same target
+(`customer_load`), same 40 customers, same seed, same chronological 70/15/15 split,
+same horizons `1, 4, 96`, same 672-step window at token stride 4, same delta target. The
+resulting sequence index version is **`sq-437c16b5d925`**, byte-identical to the version
+Phase 5 committed its metrics under, and a test asserts that equality. The Phase 5 TCN
+checkpoint is then applied directly to Phase 6's rows, so the neural comparison point
+is that model rather than a retrained approximation.
+
+The configuration loader **refuses** to load a Phase 6 config that changes the target,
+reorders or changes the horizons, or alters the loss. Silently redefining the task
+would make every comparison in the phase meaningless.
+
+**Status:** Accepted
+
+---
+
+## D-082 - Numerical projection into the residual stream; no text tokenisation
+
+**Context:** the brief asked how to connect a language model to numerical time series,
+and named three candidate routes: numerical projection, structured serialisation, and a
+hybrid. Phase 5's own requirements document had already ruled out text on the merits -
+the target is a smooth physical quantity, and BPE fragments floats lossy. Measured here:
+`"load=0.5 lag_1=0.4"` becomes 12 tokens of unrelated subword pieces.
+
+**Decision:** the bridge is a **fixed linear projection of numeric patches**. Per-unit
+channels (demand, dy/dt, sin/cos hour, sin/cos day-of-year) at Phase 5's token stride of
+4 give 168 sampled positions; 8 consecutive positions form one patch of 48 numbers,
+LayerNormed per token and projected into Qwen's 2048-wide residual stream, giving **21
+tokens covering the whole week**. The vocabulary embedding table and the
+language-model head are both unused.
+
+Both omissions are documented consequences rather than oversights. 151,936 embedding
+rows encode token frequencies in text, which carry no information about kilowatts; and
+emitting one regression output through a 151,936-way softmax would be a 311 M-parameter
+multiply per position for nothing.
+
+**Status:** Accepted
+
+---
+
+## D-083 - The front-end projection is fixed and seeded, and that is stated as a limit
+
+**Context:** with a frozen backbone there is no gradient path to the projector unless
+gradients are propagated through 1.7 B parameters, which this hardware cannot afford.
+
+**Decision:** the projector is **randomly initialised from a recorded seed**
+(`projector_seed = 20260101`) and frozen - the standard random-features regime. It is
+**100,448 parameters** against 1,720,574,976 frozen ones.
+
+The consequence is stated wherever results are reported: a good probe result would show
+the backbone's activations are linearly informative, and could not be attributed to the
+projector. A first implementation drew a fresh projector per batch, which would have
+injected batch-dependent noise into the features; the projector is now constructed once
+per extraction and asserted deterministic by test.
+
+**Status:** Accepted, with a stated limitation
+
+---
+
+## D-084 - Frozen backbone with a linear probe, because compute forbids anything else
+
+**Context:** the brief lists full fine-tuning, LoRA, QLoRA, PEFT, continued pretraining
+and SFT as candidates, and requires the choice to follow from measured compute rather
+than popularity.
+
+**Decision:** the shipped configuration is a **frozen backbone plus a trainable head**,
+and the choice is forced by measurement rather than preferred. The installed torch is
+**CPU-only** (`2.14.1+cpu`, `torch.cuda.is_available() == False`) and the only GPU is an
+RTX 4050 laptop with 6,141 MiB total, of which roughly 2,400 MiB is already consumed by
+the desktop. The weights alone are 3.44 GB in bf16 and 6.9 GB in fp32, so no optimiser
+state fits in the remaining VRAM.
+
+LoRA, QLoRA and partial unfreezing therefore remain **unrun and untested**. That is
+recorded as an open question, not as a claim that they would not work: the frozen probe
+measures whether the pretrained representation is *usable*, not whether adapting the
+backbone would help.
+
+The head carries an explicit **per-series embedding** (8 dimensions). This is not
+decoration: every input is per-unit, so the magnitude distinguishing a 1.4 kW household
+from a 210 kW shop has been deliberately divided out, and Phase 5's TCN carried the same
+embedding. Without it the comparison would measure the handicap rather than the
+representation.
+
+**Status:** Accepted, with adaptation left explicitly open
+
+---
+
+## D-085 - fp32 for inference, because on this CPU bf16 is 4.8x slower
+
+**Context:** the checkpoint is published in bfloat16, so bf16 is the obvious compute
+dtype. It is also the wrong choice here.
+
+**Decision:** run the backbone in **float32**. Measured on this machine at 21 tokens,
+batch 8: bf16 **2.568 s/sample** against fp32 **0.533 s/sample** - a **4.8x** penalty,
+because the CPU has no native bf16 arithmetic and torch emulates it. With 16 threads and
+batch 64 the fp32 figure improves further to **0.236 s/sample**, and the three real
+extraction passes measured **0.248-0.278 s/sample** over 25,000 rows each.
+
+Published checkpoint dtype and fastest inference dtype are different questions. The
+choice is recorded in every result's `compute` block so the 5.4 h extraction cost is
+attributable.
+
+**Status:** Accepted
+
+---
+
+## D-086 - A subsample, with every baseline re-measured on the identical rows
+
+**Context:** at 0.248 s/sample the full Phase 5 population costs 15.6 h for training
+origins and 11.8 h for test origins - per arm, and there are three arms. The brief
+requires the same dataset split and the same metrics "where applicable".
+
+**Decision:** score on a **deterministic, per-series balanced subsample** - 10,000
+train / 5,000 validation / 10,000 test rows, evenly spaced in time inside each split,
+5.57% of Phase 5's test population. Then, crucially, **re-measure every baseline on
+exactly those rows**: persistence is free, Phase 4's gradient boosting is refitted on
+the subsample's training rows using Phase 4's own feature definitions, and Phase 5's
+actual checkpoint is applied to the same rows.
+
+Absolute MAE on a subsample is not the published Phase 4/5 figure, and the artifacts say
+so explicitly. The result is the **paired** comparison, with a paired bootstrap of the
+per-row error difference (2,000 resamples) - which cancels the row-to-row variance
+dominating absolute MAE and is far tighter than two independent intervals.
+
+Two baseline bugs were found and fixed while building this, both of which had produced
+confidently wrong numbers: the GBM was trained on kW targets against per-unit features
+(train MAE 14.6 kW where Phase 4 reported 0.42 kW), and the TCN baseline compared
+per-unit predictions against kW actuals (13.3 kW where Phase 5 reported 0.4178 kW). A
+third was a missing `series_index`, which silently paired each row with another
+customer's demand. All three produced a *better-looking* Qwen result before they were
+caught, which is exactly why the baselines are asserted against Phase 4's published
+figures in review rather than trusted.
+
+**Status:** Accepted
+
+---
+
+## D-087 - The random-backbone control is mandatory, and it is the phase's key result
+
+**Context:** "does a pretrained transformer representation transfer to energy dynamics"
+is unanswerable without a control. A deep random feature map of the same architecture is
+a serious baseline, and Phase 5's transformer ablation had already shown that attention
+did not obviously beat convolution on this data.
+
+**Decision:** every configuration can be run against a **randomly initialised Qwen3 of
+identical architecture and parameter count**, through the identical extraction and the
+identical probe. The control is a first-class arm in `configs/qwen.toml`, not an
+afterthought, and the config loader refuses an ablation that does not declare the
+question it answers (D-087's companion rule, enforced in `config/qwen.py`).
+
+**Measured:** on identical rows with an identical probe, pretrained beats random by
+**33.9% at h=1** and **22.9% at h=96**, and ties at h=4 (0.6%). So pretraining
+contributes real, measurable signal - and nowhere near enough. Recorded in
+`docs/moe_design_requirements.md` §3 along with the participation-ratio measurement that
+explains why.
+
+**Status:** Accepted
+
+---
+
+## D-088 - Cyclic channels removed from the best configuration, after Phase 6 measured it
+
+**Context:** D-077 kept Phase 5's sin/cos hour and day-of-year channels even though the
+ablation said they were not earning their place, because removing them after seeing the
+test result would be tuning against the test split. Phase 6 gave the question a second,
+architecture-independent test: Qwen uses RoPE, which encodes only **relative** position,
+so under a transformer the absolute-time channels have a stronger justification than
+they did under a convolution.
+
+**Decision:** the test was run and it is reported. Removing the channels **improves** the
+probe by 36.7% at h=1 and 33.3% at h=4, and costs 2.5% at h=96.
+
+The channels nevertheless stay in the *shipped* `configs/qwen.toml`, for the same reason
+as D-077: the improvement was measured on the test subsample, so acting on it now would
+be exactly the test-set tuning that decision forbade. What changed is that the evidence
+is now two-sided and from two architectures, so a future pre-registered run can drop them
+with a genuine prior rather than a hunch. Recorded in
+`docs/moe_design_requirements.md` §4.
+
+**Status:** Accepted, deliberately unchanged pending a pre-registered run
+
+---
+
+## D-089 - Phase 6 verdict: Qwen loses, and the reason is measured rather than asserted
+
+**Context:** the phase asks whether Qwen3-1.7B provides a measurable advantage over the
+established baselines. The answer may be YES, NO or MIXED BY HORIZON.
+
+**Decision:** the recorded verdict is **NO, and not narrowly.** The best Qwen
+configuration (a two-layer head on layer 28) reaches 0.5452 / 1.6060 / 2.7400 kW against
+the refitted GBM's 0.4946 / 0.9749 / 1.6168 and the Phase 5 TCN's 0.4081 / 0.8224 /
+1.6522 - worse at every horizon, worse than persistence at h=1, and every comparison
+significant under the paired bootstrap. Qwen wins no regime in §1's tables.
+
+The verdict is accompanied by the measurement that explains it rather than a shrug: the
+frozen backbone's final-layer readout has a **participation ratio of 2.1** across 2048
+dimensions, versus 10.0 for a random backbone of the same architecture. The signal
+handed to the head is nearly rank-2. Pretraining still helps relative to random (§D-087),
+so the finding is "real transfer, insufficient transfer", not "no transfer".
+
+**This is a negative result and it is the phase's product.** The bar was pre-registered
+in `docs/qwen_energy_requirements.md` §1 before any of this ran: beat **1.5648 kW at 24
+hours**. Qwen's h=96 result is 2.7400 kW.
+
+**Status:** Accepted
+
+---
+
+## D-090 - Layer choice and probe depth are reported as findings, not tuned away
+
+**Context:** two ablations produced large effects - reading layer 16 instead of layer 28
+gives 23.33 kW at h=1 against 1.33 kW, and a two-layer head improves h=1 from 1.3324 to
+0.5452 kW. Both mean the shipped configuration is not the best one found.
+
+**Decision:** both are reported in full and neither is acted on in the shipped config.
+Layer 28 is the final layer and needs no justification; the deeper head was found *after*
+seeing test results and selecting it now would be tuning against the test split (D-075's
+principle, carried forward). The consequence is stated plainly: **the best Qwen
+configuration this study found is not the shipped one**, and even that best arm loses.
+The probe search is therefore shallow, and "the probe was under-parameterised" remains an
+open possibility - it is not a settled explanation.
+
+**Status:** Accepted, with an explicit known deficiency

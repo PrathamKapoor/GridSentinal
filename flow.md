@@ -1085,6 +1085,122 @@ energy-intel temporal ablate       the ablation suite and its table
 energy-intel temporal experiments  the recorded registry
 ```
 
+## 11. Phase 6: Qwen3-1.7B-Base energy specialization
+
+### 11.1 What it adds
+
+Phase 6 asks whether a **pretrained** transformer representation transfers to energy
+demand dynamics better than models trained only for this task. Phase 5's ablation had
+already measured that a compact attention model lost to a 74k-parameter convolution on
+this data, so the question is not "is attention good" but "does pretraining carry
+information that survives the transfer".
+
+```text
+Phase 4 (flat lag features)        Phase 5 (ordered windows, trained from scratch)
+  HistGBM, MLP, GRU                  dilated causal TCN, 74,099 params
+        \                                  /
+         \                                /
+          ----  Phase 6  ----
+           frozen Qwen3-1.7B trunk
+           1,720,574,976 params, 0 trainable
+           21 numeric tokens per window, 28 layers
+           -> PCA(256, fitted on train only)
+           -> head: features + per-series embedding -> 3 horizon deltas
+```
+
+### 11.2 The bridge, step by step
+
+```text
+raw kW per customer
+  -> per-unit by that series' own rated kW         ml/sequence.py gather_sequences
+  -> [demand, dy/dt, sin/cos hour, sin/cos doy]     6 channels, 168 sampled positions
+  -> patches of 8 positions                         build_patches() -> 21 tokens
+  -> LayerNorm + fixed linear projection            EnergyPatchProjector, 100,448 params
+  -> inputs_embeds [B, 21, 2048]                   into Qwen's residual stream
+  -> Qwen3Model trunk, frozen                       checkpoint.load_backbone(dtype=float32)
+  -> last-token hidden state, layer 28              hidden_states[28][:, -1, :]
+  -> PCA to 256 dims, fitted on TRAIN rows only     FeatureBasis.fit()
+  -> concat per-series embedding (8 dims)           ProbeHead.series_embedding
+  -> Linear -> 3 per-unit deltas                    ProbeHead.output
+  -> yhat(t+h) = y(t) + delta(t+h)                  Phase 5's delta parameterisation
+  -> x row's rated kW                              evaluate() in kW
+```
+
+The vocabulary embedding and the LM head are never used, so `inputs_embeds` replaces
+`input_ids` entirely.
+
+### 11.3 Compute reality, measured before anything was built
+
+| Measurement | Value |
+|---|---|
+| Installed torch | `2.14.1+cpu`, `torch.cuda.is_available() == False` |
+| GPU | RTX 4050 laptop, 6,141 MiB, ~2,400 MiB used by the desktop |
+| Weights | 3.44 GB bf16 / 6.9 GB fp32 - no optimiser state fits in free VRAM |
+| bf16 vs fp32 forward, 21 tokens | 2.568 vs 0.533 s/sample (**4.8x**) |
+| fp32, 16 threads, batch 64 | **0.236 s/sample** |
+| Real extraction, 25,000 rows | 0.248-0.278 s/sample |
+| Full Phase 5 test population | ~11.8 h of forward passes per arm |
+
+These numbers, not preference, chose a frozen backbone (D-084) and fp32 (D-085).
+
+### 11.4 Modules
+
+| Module | Responsibility |
+|---|---|
+| `ml/qwen/checkpoint.py` | Pinned identity, verification against the real files, architecture invariants for Phase 7 |
+| `ml/qwen/representation.py` | The numeric bridge: patches, the fixed projector, per-layer feature extraction |
+| `ml/qwen/features.py` | Deterministic per-series subsample, and the on-disk feature cache |
+| `ml/qwen/probe.py` | `FeatureBasis` (train-only PCA), `ProbeHead`, `fit_probe`, `probe_predict` |
+| `ml/qwen/baselines.py` | Persistence, refitted GBM, the real Phase 5 checkpoint, paired bootstrap |
+| `ml/qwen/experiment.py` | The runner, regime/error analysis, representation diagnostics, the verdict |
+| `config/qwen.py` | Strict config; refuses a redefined task |
+| `scripts/phase6_extract.py` | Backbone extraction (the expensive step) |
+| `scripts/phase6_probe.py` | Probe experiments over cached features (seconds) |
+
+### 11.5 Results on identical rows
+
+10,000 test rows, every model scored on the same rows. kW MAE:
+
+| Model | h=1 | h=4 | h=96 |
+|---|---|---|---|
+| persistence | **0.3952** | 0.8925 | 2.4427 |
+| Phase 5 TCN (real checkpoint) | 0.4081 | **0.8224** | 1.6522 |
+| classical GBM (refitted) | 0.4946 | 0.9749 | **1.6168** |
+| Qwen probe, 2-layer head | 0.5452 | 1.6060 | 2.7400 |
+
+**Verdict: NO.** Worse at every horizon, worse than persistence at h=1, significant
+under a paired bootstrap. Qwen wins no regime.
+
+### 11.6 The two measurements that explain it
+
+```text
+pretrained vs random backbone, identical everything else:
+  h=1    1.3324 vs 2.0154   pretrained better by 33.9%
+  h=4    1.8264 vs 1.8375   tie
+  h=96   2.9956 vs 3.8840   pretrained better by 22.9%
+
+participation ratio of the frozen readout (effective dimensions out of 2048):
+  layer        8     16    24    28
+  pretrained  1.0    1.0   1.1   2.1
+  random      7.1    8.4   9.6  10.0
+```
+
+Pretraining contributes real signal. It is simply not enough: the state the trunk hands
+the head is nearly rank-2.
+
+### 11.7 Entry points
+
+```text
+energy-intel qwen config       resolved experiment configuration
+energy-intel qwen verify       checkpoint verification against the pinned facts
+energy-intel qwen inspect      architecture report and the Phase 7 surgery sites
+energy-intel qwen probe        probe experiments over cached features
+energy-intel qwen experiments  the recorded Phase 6 results
+```
+
+`verify` and `inspect` need only the checkpoint; `probe` needs the cached features
+produced by `scripts/phase6_extract.py` and never downloads anything itself.
+
 ## 9. Entry points
 
 ```text

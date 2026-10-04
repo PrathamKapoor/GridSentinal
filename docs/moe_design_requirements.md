@@ -1,168 +1,222 @@
 # Energy-MoE Design Requirements
 
-What a Mixture-of-Experts model for energy demand would require, and what Phase 5
-measured that bears on it. This document prepares Phase 7; it does not build,
-train, or recommend training one.
+What a Mixture-of-Experts model for energy demand would require, and what Phases 5 and
+6 actually measured. This document is the input to Phase 7.
 
-The central question is not "can an MoE be built" but "**is there a routing problem
-worth solving here at all**". Phases 4 and 5 measured the answer's preconditions.
+It was first written after Phase 5, from regime evidence alone. It has now been
+**rewritten against Phase 6's results**, because Phase 6 changed the picture in one
+important way: the strongest single signal in it is not about regimes at all, it is
+about the **representation** the backbone hands to the head.
+
+Sections 1-3 are the measurement. Sections 4-8 are the requirements and the honest
+limits.
 
 ---
 
-## 1. The precondition: measured heterogeneity
+## 1. The precondition that is still true: measured regime heterogeneity
 
-An MoE earns its complexity only if different conditions genuinely need different
-predictors. Measured at the shortest horizon, kW MAE (Phase 5 TCN vs the Phase 4
-baselines, on the identical 179,520-row test split):
+At the shortest horizon, kW MAE on the Phase 6 test subsample (10,000 rows, identical
+for every model):
 
-| Demand tercile | n | Phase 5 TCN | persistence | GBM |
+| Demand tercile | n | GBM | persistence | Phase 5 TCN | Qwen probe |
+|---|---|---|---|---|---|
+| low | 3,334 | **0.0834** | 0.0690 | 0.0800 | 0.1197 |
+| typical | 3,333 | **0.2548** | 0.2626 | 0.2599 | 0.2985 |
+| high | 3,333 | **1.1456** | **0.8541** | 0.8845 | 1.2176 |
+
+| Ramp tercile | GBM | persistence | Phase 5 TCN | Qwen probe |
 |---|---|---|---|---|
-| low | 59,840 | **0.0772** | 0.0664 | 0.0875 |
-| typical | 59,840 | 0.2482 | 0.2494 | 0.2503 |
-| high | 59,840 | **0.9280** | 0.8972 | 0.9850 |
+| low | 0.0803 | **0.0034** | 0.0343 | 0.1022 |
+| typical | 0.2008 | 0.0602 | **0.1035** | 0.2132 |
+| high | 1.2028 | 1.1220 | **1.0867** | 1.3203 |
 
-| Ramp tercile | Phase 5 TCN | persistence | GBM |
-|---|---|---|---|
-| low | 0.0324 | **0.0034** | 0.0739 |
-| typical | 0.0980 | 0.0603 | **0.1708** |
-| high | 1.1231 | 1.1493 | **1.0780** |
+The Phase 5 conclusions hold and are now measured twice:
 
-Read this carefully, because it cuts both ways:
+* Error concentrates. The high demand tercile costs **14x** the low tercile and is
+  roughly 73% of total error; the high ramp tercile is roughly 84%.
+* **No single model wins everywhere.** Persistence is untouchable in low-ramp periods
+  (0.0034 kW, an order of magnitude better than anything else). The Phase 5 TCN wins
+  high-ramp periods. The GBM wins both demand terciles.
+* Qwen is **never** the best model in any regime, including the difficult ones. It
+  does not carve out a niche; it is uniformly fourth.
 
-* **The spread is real and large.** High-demand rows cost 12x low-demand rows.
-  Across horizons the high tercile grows from 0.928 kW at 15 minutes to 4.051 kW at
-  24 hours.
-* **Error is concentrated, not diffuse.** The high demand tercile is a third of the
-  rows and **74% of the total error**. The high ramp tercile is **90% of the total
-  error**. That is the shape a router could exploit.
-* **But no single model wins everywhere.** The TCN wins the demand terciles;
-  persistence wins low-ramp periods by an order of magnitude; GBM wins high-ramp
-  periods. The best available predictor is currently *regime-dependent*.
-
-That last row is the actual finding. It is weaker than "an MoE will help" and
-stronger than "nothing is going on".
+That last row matters for Phase 7 planning. A router over experts only pays if some
+regime is better served by a specialist. On this evidence, the specialists to route
+*between* are persistence, the GBM and the TCN - not Qwen variants.
 
 ---
 
 ## 2. The precondition that is NOT met: a deployable gate
 
-**The terciles above are computed from the demand the model is being asked to
-predict.** They are diagnostics, not a routing signal. A router cannot use them,
-because at forecast time the future demand level and future ramp are unknown by
-construction. Any design that routes on them has leaked the target, and this
-project's leakage guard would (correctly) reject it.
+**The terciles above are computed from the demand being predicted.** They are
+diagnostics, not a routing signal. At forecast time the future demand level and ramp
+are unknown by construction, so a router cannot use them. Any design that routes on
+them has leaked the target, and Phase 4's leakage guard would correctly reject it.
 
-So a deployable gate must be driven by features observable **at or before the
-forecast origin**:
+A deployable gate must run on features observable **at or before the forecast origin**:
 
 | Candidate gate feature | Observable? | Note |
 |---|---|---|
-| Demand level over the last few hours | yes | the natural proxy for the demand tercile |
+| Trailing demand level over recent hours | yes | the natural proxy for the demand tercile |
 | Trailing ramp magnitude | yes | the natural proxy for the ramp tercile |
-| Hour of day, day of week | yes | Phase 5's ablation found the cyclic channels were *not* earning their place, so these are weak on their own |
-| Predicted level for the target horizon | only if a level model exists first | implies a two-stage design |
-| **Future demand level or ramp** | **no** | this is the target; using it is leakage |
+| Hour of day, day of week | yes | but see §4: Phase 6 found the cyclic channels actively harmful |
+| Predicted level for the target horizon | only if a level model runs first | implies a two-stage design |
+| **Future demand level or ramp** | **no** | that is the target |
 | **Future weather** | **no** | not in this dataset at all |
 
-Any Phase 7 proposal must state which of these its gate uses and show that every
-gate input is available at the origin. A gate built on unobservable features is
-worthless no matter how good it scores on this test split, because the score would
-be an artifact.
-
-There is a further cost: building a *usable* regime proxy means labelling regions
-by a trailing-window rule and accepting that the proxy is imperfect. Phase 7 must
-report how well any proxy separates the terciles above, not assume it does.
+Phase 7 must state which of these its gate uses and demonstrate that every gate input
+is available at the origin. Building a *usable* regime proxy means labelling regions
+by a trailing-window rule and accepting that the proxy is imperfect; Phase 7 must
+report how well any proxy separates the terciles in §1 rather than assuming it does.
 
 ---
 
-## 3. Expert inventory: what the evidence already supports
+## 3. The new finding: the representation is the bottleneck, not the routing
 
-Phase 5's ablations (`artifacts/phase5/ablations.md`) measured which components earn
-their place. Two results change what an MoE should contain:
+Phase 6's central measurement is that a frozen Qwen3-1.7B backbone hands its head an
+almost rank-2 signal for this task.
 
-1. **The delta parameterisation is not optional.** Predicting the level instead of the
-   change from `y(t)` costs **+253% at 15 min, +52% at 1 h, +20% at 24 h**. Any
-   expert that predicts levels is starting from a much worse position. Every expert
-   shares the delta target.
-2. **Context length is a real axis.** One day of context costs +38% at 15 min versus a
-   week; two days still cost +14%. Experts differing in lookback are therefore a
-   defensible axis of specialisation — the effect is measured, not assumed.
+Participation ratio of the covariance spectrum, `(sum lambda)^2 / sum lambda^2`, where
+the effective number of active dimensions is the value itself. Measured on the final
+layer's last-token state:
 
-A third result argues *against* a particular expert class:
+| Backbone | Layer 8 | Layer 16 | Layer 24 | Layer 28 |
+|---|---|---|---|---|
+| Qwen3-1.7B pretrained | 1.0 | 1.0 | 1.1 | **2.1** |
+| random, same architecture | 7.1 | 8.4 | 9.6 | **10.0** |
 
-3. **Attention did not beat convolution here.** A 112k-parameter patch Transformer was
-   49.8% worse at 15 min and 0.6% worse at 24 h than the 74k-parameter TCN, and 6.0%
-   better at 1 h, at a matched reduced budget. On this data an attention expert is not
-   obviously a useful specialist.
+Read carefully, because it cuts two ways:
+
+* The pretrained residual stream is **far more collapsed** than a random one at every
+  depth - participation 1.0 at layers 8 and 16 means those states are effectively a
+  single direction. Whatever Qwen's final state computes for a numeric window, it is
+  not 2048-dimensional structure.
+* Pretraining nonetheless **helps**: on identical rows with an identical probe,
+  pretrained beats random by 33.9% at h=1 and 22.9% at h=96, and ties at h=4. So
+  there is real transfer in there. It is simply not enough to reach the baselines.
+
+Two further measurements support the same reading:
+
+* **Layer choice matters enormously.** Reading layer 16 instead of layer 28 gives an
+  MAE of 23.33 kW at h=1 against 1.33 kW at layer 28 - a 17x degradation from choosing
+  the wrong depth. Whatever survives to the final layer is not what an intermediate
+  layer holds.
+* **The linear probe was under-parameterised.** A two-layer head cut h=1 error from
+  1.3324 to 0.5452 kW. The best Qwen configuration is therefore **not** the shipped
+  linear one, and even that best arm still loses to the GBM by 10.2% at h=1 and by
+  65-70% at the longer horizons.
+
+**Implication for Phase 7.** Structural modification of Qwen is being considered on
+the premise that its dense form is a good representation that merely needs
+specialisation. Phase 6 measured that premise and did not support it. Before adding
+experts, the honest question is whether the *shared* backbone can be made to carry more
+dimensional structure for numeric windows - not whether to route around a collapsed
+one. An MoE over a rank-2 shared trunk inherits the collapse.
 
 ---
 
-## 4. Candidate architectures
+## 4. What the cyclic-channel ablation settles
+
+Phase 5 found the sin/cos hour and day-of-year channels were not earning their place
+under a convolution, and kept them anyway rather than tune against the test set
+(D-077). Phase 6 re-tested them under a transformer, where the motivation is stronger:
+Qwen's RoPE encodes only **relative** position, so absolute time-of-day has to come
+from the input channels.
+
+Measured, identical rows, identical probe:
+
+| Horizon | with cyclic | without cyclic | effect of removing |
+|---|---|---|---|
+| h=1 | 1.3324 | **0.8432** | **36.7% better** |
+| h=4 | 1.8264 | **1.2174** | **33.3% better** |
+| h=96 | 2.9956 | **3.0695** | 2.5% worse |
+
+Removing them helps substantially at the two short horizons even under RoPE, and costs
+almost nothing at 24 hours. The Phase 5 finding **transfers across architecture**:
+absolute-time channels are not the missing ingredient, and on a transformer they are
+mildly harmful at short range. A Phase 7 expert should not assume a cyclic channel is
+required just because the backbone uses RoPE.
+
+---
+
+## 5. Candidate architectures
 
 | Design | Assessment |
 |---|---|
-| **Horizon experts** (one per horizon) | Weak. Horizons are already separate output heads sharing a trunk, and the `single_horizon` ablation showed sharing *helps* by 38.5%. Splitting them discards a measured win. |
-| **Regime experts** (stable vs ramp, low vs high) | The best-supported option, conditional on §2's gate problem being solved. |
-| **Lookback experts** (1 day vs 1 week) | Supported by measurement; increases memory sharply, since each expert needs its own window. |
-| **Model-family experts** (TCN vs GBM vs persistence) | Effectively a learned stacking ensemble. Note that "persistence" and "GBM" here are *not* neural experts, which is a design smell: the gate would be selecting among different model classes, which is an ensemble, not an MoE. |
-| **Per-customer experts** | Rejected. Error concentration is by *regime*, not by customer size; Phase 4 already showed the worst customer carries roughly 7x the median. Per-customer experts would multiply parameters by 40 for no measured gain. |
+| **Horizon experts** (one per horizon) | Weak. Horizons are already separate heads over a shared trunk, and Phase 5's `single_horizon` ablation showed sharing *helps* by 38.5%. Splitting them discards a measured win. |
+| **Regime experts** (stable vs ramp, low vs high) | The best-supported routing option, conditional on §2's gate problem being solved. But note the specialists that currently win are persistence, GBM and TCN - not Qwen variants. |
+| **Lookback experts** (1 day vs 1 week) | Supported by Phase 5's measurement that context length helps monotonically. Increases memory sharply, since each expert needs its own window. |
+| **Model-family experts** (TCN vs GBM vs persistence) | Effectively a learned stacking ensemble. Not an MoE: the gate would select among different model classes. Measured to be worth building - §1 shows the best model is regime-dependent. |
+| **Per-customer experts** | Rejected. Error concentrates by *regime*, not by customer size; per-customer experts would multiply parameters by 40 for no measured gain. |
+| **Qwen experts over a shared Qwen trunk** | **Not supported by Phase 6.** The shared trunk's readout is near rank-2 (§3), and Qwen wins no regime (§1). Specialising a collapsed representation does not obviously produce a better one. |
 
 ---
 
-## 5. Requirements any Phase 7 proposal must meet
+## 6. Requirements any Phase 7 proposal must meet
 
 1. **A gate over observable features only**, with each feature's availability at the
    forecast origin stated explicitly (§2).
-2. **A leakage test**, in the same spirit as the Phase 4 guard: assert that the gate
-   cannot see any input row at or after the target timestamp. The existing guard
-   checks windows; this one must check the gate's inputs too.
-3. **Load-balancing loss**, chosen and justified. Without it an MoE collapses onto one
+2. **A leakage test** covering the gate's inputs, not just the sequence window.
+3. **Evidence that the shared backbone is not the bottleneck.** Phase 6 measured a
+   participation ratio of 2.1 at the readout. A proposal that adds experts while the
+   shared trunk stays at that rank must say why more capacity helps.
+4. **Load-balancing loss**, chosen and justified. Without it an MoE collapses onto one
    expert and becomes a single slow model.
-4. **Capacity factors reported per expert.** An MoE whose experts each handle 3% of rows
-   has multiplied parameters without buying coverage. If that is what the gate
-   produces, the honest conclusion is that one model is enough.
-5. **A no-MoE control at matched budget.** The comparison is against the TCN and GBM
-   measured on the same split in the same run, or the result means nothing.
-6. **Per-regime error reported against the best single model**, not only against the
-   average. A router that improves the average by degrading one regime is not a win,
-   and the low-ramp regime is where persistence is currently untouchable
-   (0.0034 kW against 0.0324 kW). Losing that regime to gain elsewhere is a plausible
-   and undesirable outcome.
+5. **Capacity factors reported per expert.** An MoE whose experts each handle 3% of rows
+   has multiplied parameters without buying coverage.
+6. **A no-MoE control at matched budget**, measured on the same rows in the same run.
+7. **Per-regime error against the best single model**, not only against the average. The
+   low-ramp regime, where persistence reaches 0.0034 kW, is the one a router is most
+   likely to damage.
+8. **Compute accounting.** Phase 6's measured cost: 0.248 s/sample for a frozen
+   1.7B-parameter forward pass at 21 tokens on CPU. A multi-expert forward pass is
+   several times that.
 
 ---
 
-## 6. Compute reality
+## 7. Compute reality
 
-Phase 5's TCN is 74,099 parameters and took **6,524 s** to train on CPU for 8 epochs.
-Its ablation suite took a further 1,339 s. An MoE on the same data would add
-per-expert parameters, and each expert with its own lookback multiplies that again.
-The realistic CPU budget for this project is one or two such runs, which is enough
-to test one routing hypothesis well and not enough to sweep architectures.
+| Measurement | Value |
+|---|---|
+| GPU | RTX 4050 laptop, 6,141 MiB total, ~2,400 MiB already used by the desktop |
+| Torch build installed | **CPU-only** (`torch 2.14.1+cpu`), CUDA unavailable |
+| Frozen forward pass, 21 tokens | **0.248 s/sample** measured over 25,000 rows |
+| bf16 vs fp32 on this CPU | bf16 **4.8x slower** (emulated, no native bf16 in AVX2) |
+| Full Phase 5 test population | ~11.8 h of forward passes at 21 tokens |
+| Feature extraction actually run | 3 arms x 25,000 rows = **5.4 h** |
+| Head training (34,627 params) | **5.6 s** |
+
+The head is free; the backbone is everything. Any Phase 7 design should be costed as a
+multiple of the frozen forward pass, and should expect that a trainable backbone - let
+alone an MoE forward pass - is out of reach on this machine at the full population.
 
 ---
 
-## 7. What is deliberately NOT claimed
+## 8. What is deliberately NOT claimed
 
-* Not that an MoE would beat the TCN. §1 shows a *reason to test* one, not a result.
+* Not that an MoE would beat the TCN or the GBM. §1 and §3 give reasons to doubt it.
 * Not that the regime terciles are available at inference. §2 shows they are not.
-* Not that the ablation budget supports absolute comparisons. The ablation suite
-  trains at 2 epochs and a coarse training stride, so its reference is markedly worse
-  than the main run (0.5435 vs 0.4178 kW at 15 min). Comparisons **within**
-  `ablations.md` are valid; comparisons against the main run are not.
-* Not that attention is exhausted as an option. The Transformer ablation ran at a
-  matched reduced budget, and undertrained attention is the usual reason it loses.
-* Not that more parameters help. Nothing measured suggests parameter count is the
-  bottleneck.
+* Not that ablation budgets support absolute comparisons. Phase 6's ablations share one
+  25,000-row subsample and one extraction pass, so comparisons **within** them are
+  valid; absolute values are subsample values and are not the published Phase 4/5
+  figures.
+* Not that a 2-layer head is the best head. It beat the linear probe by a lot, which
+  means the probe search was shallow, not that it has converged.
+* Not that patch granularity has been settled. `patch_size = 1` was not run: at 168
+  tokens it would cost roughly 16 h per extraction pass.
+* Not that a trainable backbone would not help. Phase 6 measured a *frozen* one. Full
+  or partial unfreezing was costed, not run, and remains untested.
 
 ---
 
-## 8. Minimum bar for starting Phase 7
+## 9. Minimum bar for starting Phase 7
 
 | Criterion | Requirement |
 |---|---|
 | Gate inputs | Every one listed with its availability at the origin; no future-derived feature |
-| Gate quality | The trailing-window proxy's separation of the terciles in §1 measured and reported, before any MoE is trained |
-| Leakage test | Automated, covering the gate's inputs, not just the sequence window |
-| Control | TCN and GBM on the same split in the same run |
-| Budget | Stated in the units of §6 |
-| Fallback | "One model is enough" is a recorded, acceptable outcome |
+| Gate quality | The trailing-window proxy's separation of the §1 terciles measured and reported, before any MoE is trained |
+| Leakage test | Automated, covering the gate's inputs |
+| Representation check | The shared trunk's participation ratio re-measured, with an argument for why added capacity beats a better readout |
+| Control | TCN and GBM on the same rows in the same run |
+| Budget | Stated in the units of §7 |
+| Fallback | "One model, plus a regime router over persistence/GBM/TCN, is enough" is a recorded, acceptable outcome |

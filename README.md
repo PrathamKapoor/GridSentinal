@@ -15,13 +15,19 @@ OBSERVE → UNDERSTAND → PREDICT → GENERATE OPTIONS → ATTACK OPTIONS
 
 ---
 
-## Current status: Phase 5 of 20 — ENERGY DEMAND DYNAMICS MODEL
+## Current status: Phase 6 of 20 — QWEN3-1.7B ENERGY SPECIALIZATION
 
-**Phases 1-4 complete. Phase 5 complete — and its answer is mixed, not a win.** A
-learned temporal model beats the classical baseline at two of three horizons and loses
-at the third. No Energy World Model, no Qwen, no Energy-MoE, no optimiser, no digital
-twin, no agent, no UI exists yet, by design — and `docs/world_model_requirements.md`
-records why an action-conditioned model is not reachable from this dataset.
+**Phases 1-5 complete. Phase 6 complete — and its answer is NO.** A pretrained
+Qwen3-1.7B, used as a frozen backbone, is **worse than the classical baseline at every
+horizon** on the real SMART-DS forecasting task. No Energy-MoE, no expert routing, no
+structural modification of Qwen, no optimiser, no digital twin, no agent, no UI exists
+yet, by design.
+
+The negative result is the finding, and it is measured rather than asserted. The
+pretrained representation *does* beat a randomly initialised backbone of identical
+architecture by 33.9% at 15 minutes — so transfer is real — but the state it hands the
+head is nearly rank-2, and 1.7 B parameters of that do not beat 13 lag features and a
+gradient-boosted tree.
 
 | Phase | Capability | Status |
 |---|---|---|
@@ -30,8 +36,8 @@ records why an action-conditioned model is not reachable from this dataset.
 | 3 | Dataset ingestion, normalization, reality validation | **Complete — PARTIAL fidelity** |
 | 4 | ML dataset + naive/classical/neural baselines | **Complete — measured** |
 | 5 | Energy Demand Dynamics Model (temporal) | **Complete — mixed result** |
-| 6 | Qwen3-1.7B domain specialization | Not started — bar defined in `docs/qwen_energy_requirements.md` |
-| 7 | Energy-MoE | Not started — requirements in `docs/moe_design_requirements.md` |
+| 6 | Qwen3-1.7B domain specialization | **Complete — negative result** |
+| 7 | Energy-MoE | Not started — **Phase 6 evidence argues against Qwen surgery** |
 | 8 | Uncertainty estimation | Container only; method TBD |
 | 9 | Flexibility modelling | Representation only; **battery dispatch unavailable (G-01)** |
 | 10 | Optimization / decision engine | Not started |
@@ -45,6 +51,59 @@ records why an action-conditioned model is not reachable from this dataset.
 | 18 | Demo scenarios | Not started |
 | 19 | UI / visualization | Not started |
 | 20 | Hackathon packaging | Not started |
+
+---
+
+## The Phase 6 answer
+
+> Can a pretrained Qwen3-1.7B checkpoint be meaningfully adapted to the real SMART-DS
+> energy forecasting problem?
+
+**No.** Worse than the classical baseline at every horizon, on identical rows, with the
+comparison significant under a paired bootstrap.
+
+| Model | h=1 (15 min) | h=4 (1 h) | h=96 (24 h) |
+|---|---|---|---|
+| persistence | **0.3952** | 0.8925 | 2.4427 |
+| Phase 5 temporal TCN | 0.4081 | **0.8224** | 1.6522 |
+| classical GBM | 0.4946 | 0.9749 | **1.6168** |
+| **Qwen3-1.7B frozen + head** | 0.5452 | 1.6060 | 2.7400 |
+
+10,000 test rows, every model scored on exactly the same rows. The bar was
+pre-registered in `docs/qwen_energy_requirements.md` before this phase ran: beat
+**1.5648 kW at 24 hours**. Qwen's best h=96 result is **2.7400 kW**.
+
+### Two measurements that explain it
+
+1. **Pretraining does transfer — partially.** Against a randomly initialised Qwen3 of
+   identical architecture and parameter count, the pretrained trunk is **33.9% better
+   at 15 min** and **22.9% better at 24 h**, and ties at 1 h.
+2. **But the representation handed to the head is nearly rank-2.** The participation
+   ratio of the frozen readout — the effective number of active dimensions out of 2048 —
+   is **2.1** at the final layer, against **10.0** for the random control. Pretrained
+   states are *more* collapsed than random ones at every depth.
+
+### Four findings that change Phase 7
+
+* **Qwen wins no regime.** It is fourth in all six demand/ramp terciles, including the
+  difficult ones. The models that *do* split by regime are persistence (untouchable in
+  low-ramp periods at 0.0034 kW), the TCN (high-ramp) and the GBM (demand level).
+* **A regime router over those three is the better-supported Phase 7**, and Phase 6's
+  evidence argues against structural Qwen surgery — an MoE over a rank-2 shared trunk
+  inherits the collapse.
+* **The cyclic channels are not earning their place**, now confirmed under two
+  architectures: removing them improves the probe by 36.7% at 15 min even though Qwen's
+  RoPE encodes only relative position.
+* **Compute is the binding constraint.** The installed torch is CPU-only and the only GPU
+  has ~3.7 GB free, so LoRA and full fine-tuning were **not run** — recorded as untested,
+  not refuted. A frozen forward pass costs 0.248 s/sample; the full test population would
+  be ~11.8 h per arm.
+
+### What is not claimed
+
+No statistical significance beyond a row-level paired bootstrap (one seed). No
+action-conditioned capability. No claim that a *trainable* backbone would not help — a
+frozen one was all the hardware allowed, and that distinction is the main open question.
 
 ---
 
@@ -290,6 +349,10 @@ uv run python -m energy_intelligence ml --ml-config configs/ml_pv_horizon.toml r
 | `energy-intel temporal run` | Train one temporal model, evaluate once, analyse, record |
 | `energy-intel temporal ablate` | The ablation suite and its measured table |
 | `energy-intel temporal experiments` | The temporal experiment registry |
+| `energy-intel qwen config` | Resolved Qwen experiment configuration |
+| `energy-intel qwen verify` | Verify the base checkpoint against its pinned facts |
+| `energy-intel qwen inspect` | Architecture report and the Phase 7 surgery sites |
+| `energy-intel qwen probe` | Probe experiments over the cached frozen features |
 | `energy-intel init-dirs` / `paths` | Directory layout |
 
 Global flags: `--config`, `--log-level`, `--experiment-name`, `--seed`.
@@ -383,8 +446,16 @@ checks and the entire SMART-DS ingestion pipeline run on the standard library al
 
 Phase 4 adds exactly three, because it is the first phase that needs a numerical
 stack (D-055): `numpy`, `scikit-learn`, and `torch` from the **CPU-only** index
-(the default Windows wheel bundles CUDA and is several hundred megabytes). pandas was
-deliberately **not** adopted, and a test asserts it is never imported.
+(the default Windows wheel bundles CUDA and is several hundred megabytes).
+
+Phase 6 adds a fourth: **`transformers>=4.51.0`**, the floor declared in the Qwen
+checkpoint's own `config.json`, to load the real base weights. Its transitive
+`safetensors`, `tokenizers` and `huggingface_hub` come with it. pandas was
+deliberately **not** adopted at any point, and a test asserts it is never imported.
+
+The installed torch remains **CPU-only**, so the RTX 4050 in this machine is unusable
+for the project; that is recorded as the reason Phase 6 could not attempt LoRA or full
+fine-tuning rather than left as an unstated assumption.
 
 A test also asserts that `energy_intelligence/domain/` imports **no** ML library, so
 the Phase 2 contract stays a dependency-free vocabulary that everything else speaks.
@@ -395,7 +466,7 @@ Dev extras: `pytest`, `pytest-cov`.
 
 | File | Contents |
 |---|---|
-| `decisions.md` | Every decision D-001 … D-079, with alternatives and consequences |
+| `decisions.md` | Every decision D-001 … D-090, with alternatives and consequences |
 | `flow.md` | How the system actually works, by real function and file name |
 | `docs/energy_system_spec.md` | The Phase 2 contract: state, actions, constraints, objectives, time, topology, provenance, quality, uncertainty |
 | `docs/agent_responsibility_matrix.md` | Future agent responsibilities, sourced from two reference repositories |
@@ -405,7 +476,8 @@ Dev extras: `pytest`, `pytest-cov`.
 | `docs/ml_data_gap_report.md` | 15 gaps: what it does not provide for machine learning |
 | `docs/world_model_requirements.md` | What an action-conditioned world model needs, and why SMART-DS cannot supply it |
 | `docs/qwen_energy_requirements.md` | The bar a Qwen3-1.7B energy model must clear, derived from measured Phase 4/5 results |
-| `docs/moe_design_requirements.md` | Measured regime heterogeneity, the observable-gate constraint, and which MoE designs the evidence supports |
+| `docs/qwen_energy_requirements.md` | The pre-registered bar a Qwen energy model must clear (written in Phase 5) |
+| `docs/moe_design_requirements.md` | Rewritten from Phase 6: regime heterogeneity, the observable-gate constraint, the rank-2 representation problem, and which MoE designs the evidence supports |
 | `docs/architecture.md` | Target architecture and component boundaries |
 | `handoff.md` | Current state, what is done and not done, next phase, critical context |
 

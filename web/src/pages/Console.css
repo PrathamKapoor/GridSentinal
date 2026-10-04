@@ -1,28 +1,30 @@
-/* Console page: light supervisory-workbench aesthetic.
-   Paper surfaces, navy-black ink, hairline rules instead of boxes,
-   mono micro-labels, tabular numerals. Green carries the identity;
-   meaning is never carried by colour alone (every status has a label). */
+/* Console page: supervisory-workbench structure on the GridSentinal
+   dark-green palette, so the console and the landing page read as one
+   system. Hairline rules instead of boxes, mono micro-labels, tabular
+   numerals. Meaning is never carried by colour alone: every status
+   carries a text label. */
 
 .cpage {
-  --c-paper: #ffffff;
-  --c-canvas: #f4f7f5;
-  --c-sunken: #e9efeb;
-  --c-ink: #0c1222;
-  --c-ink-2: #273044;
-  --c-muted: #586174;
-  --c-faint: #676f82;
-  --c-line: #e3e6ec;
-  --c-line-2: #cfd4dd;
+  --c-paper: #071a10;
+  --c-canvas: #04110a;
+  --c-sunken: #0a2416;
+  --c-ink: #ecf6ef;
+  --c-ink-2: #c3d8ca;
+  --c-muted: #9cc2a8;
+  --c-faint: #5f8a70;
+  --c-line: #14301f;
+  --c-line-2: #1f4a2f;
 
-  --c-brand: #0f8a4c;
-  --c-brand-strong: #0b6e3c;
-  --c-brand-tint: #e9f7ef;
-  --c-brand-tint-2: #d3f0e0;
+  --c-brand: #4ade80;
+  --c-brand-strong: #86efac;
+  --c-brand-tint: rgba(74, 222, 128, 0.12);
+  --c-brand-tint-2: rgba(74, 222, 128, 0.32);
 
-  --c-attention: #b45309;
-  --c-attention-tint: #fdf3e8;
-  --c-neutral: #586174;
-  --c-neutral-tint: #eef0f4;
+  --c-attention: #e3c065;
+  --c-attention-tint: rgba(227, 192, 101, 0.12);
+  --c-attention-border: rgba(227, 192, 101, 0.32);
+  --c-neutral: #9cc2a8;
+  --c-neutral-tint: rgba(156, 194, 168, 0.1);
 
   background: var(--c-canvas);
   color: var(--c-ink);
@@ -38,10 +40,11 @@
   top: -3rem;
   z-index: 60;
   padding: 8px 12px;
-  background: var(--c-ink);
-  color: #fff;
+  background: var(--c-brand);
+  color: var(--accent-ink, #04190c);
   border-radius: 5px;
   font-size: 0.82rem;
+  font-weight: 600;
   transition: top 120ms;
 }
 
@@ -301,7 +304,7 @@ section {
 .cstatus--partial {
   color: var(--c-attention);
   background: var(--c-attention-tint);
-  border-color: #f4e2c8;
+  border-color: var(--c-attention-border);
 }
 
 .cstatus--not-implemented {
@@ -319,11 +322,17 @@ section {
 }
 
 .ccard {
-  background: var(--c-paper);
+  background: linear-gradient(180deg, rgba(10, 36, 22, 0.55), rgba(7, 26, 16, 0.35));
   border: 1px solid var(--c-line);
   border-radius: 8px;
   padding: 18px 20px 20px;
-  box-shadow: 0 1px 0 rgba(12, 18, 34, 0.04);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  transition: border-color 180ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.3, 1.1);
+}
+
+.ccard:hover {
+  border-color: var(--c-line-2);
+  transform: translateY(-2px);
 }
 
 .ccard-head {

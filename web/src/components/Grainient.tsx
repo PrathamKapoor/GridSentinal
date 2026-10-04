@@ -34,12 +34,12 @@ export const INDUSTRIAL_PARAMS: GrainientParams = {
   colorB: [0.03, 0.09, 0.05],
   colorC: [0.16, 0.55, 0.3],
   colorD: [0.1, 0.45, 0.42],
-  noiseScale: 2.1,
-  warpAmp: 0.55,
-  energy: 0.6,
+  noiseScale: 2.6,
+  warpAmp: 0.72,
+  energy: 0.72,
   grain: 0.028,
   vignette: 0.8,
-  speed: 0.045,
+  speed: 0.42,
 };
 
 const VERT = `#version 300 es
@@ -100,6 +100,12 @@ void main() {
   p *= uNoiseScale;
 
   float t = uTime;
+
+  // slow rotation of the whole field: the smoke visibly turns over time
+  float ang = t * 0.16;
+  float ca = cos(ang);
+  float sa = sin(ang);
+  p = mat2(ca, -sa, sa, ca) * p;
 
   // two-pass domain warp (iq style)
   vec2 q = vec2(fbm(p + vec2(0.0, 0.0) + t * 0.5),

@@ -25,7 +25,7 @@ export default function FinalCta() {
   return (
     <section className="final-cta" id="enter" aria-label="Enter GridSentinal">
       <div className="final-cta-atmosphere" aria-hidden="true">
-        <Grainient params={CTA_PARAMS} />
+        <Grainient params={CTA_PARAMS} className="final-cta-grainient" />
         <div className="final-cta-fade" />
       </div>
 

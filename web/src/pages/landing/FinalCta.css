@@ -12,6 +12,11 @@
   inset: 0;
 }
 
+.final-cta-grainient {
+  animation: smoke-drift 26s ease-in-out infinite;
+  will-change: transform;
+}
+
 .final-cta-fade {
   position: absolute;
   inset: 0;

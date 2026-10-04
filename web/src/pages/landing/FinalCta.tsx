@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import Grainient, { INDUSTRIAL_PARAMS } from "../../components/Grainient";
 import Marquee from "../../components/anim/Marquee";
+import Reveal from "../../components/anim/Reveal";
 import "./FinalCta.css";
 
 const CTA_PARAMS = {
@@ -33,26 +34,34 @@ export default function FinalCta() {
       </div>
 
       <div className="container final-cta-inner">
-        <p className="final-cta-kicker mono">08 · Enter</p>
-        <h2 className="final-cta-title">
-          See what the
-          <br />
-          system <em>sees.</em>
-        </h2>
-        <p className="final-cta-lede">
-          The console reports the system's real, recorded state — the ingested
-          feeder, the fixed ensemble, the calibration results, the experiment
-          registry, and everything still on the roadmap. No mock data presented
-          as live.
-        </p>
-        <div className="final-cta-actions">
-          <Link to="/console" className="btn btn-primary btn-lg">
-            Enter GridSentinal
-            <svg className="btn-arrow" width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden="true">
-              <path d="M1 6h11M7.8 1.8 12 6l-4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </Link>
-        </div>
+        <Reveal delay={0}>
+          <p className="final-cta-kicker mono">08 · Enter</p>
+        </Reveal>
+        <Reveal delay={110}>
+          <h2 className="final-cta-title">
+            See what the
+            <br />
+            system <em>sees.</em>
+          </h2>
+        </Reveal>
+        <Reveal delay={230}>
+          <p className="final-cta-lede">
+            The console reports the system's real, recorded state — the
+            ingested feeder, the fixed ensemble, the calibration results, the
+            experiment registry, and everything still on the roadmap. No mock
+            data presented as live.
+          </p>
+        </Reveal>
+        <Reveal delay={360}>
+          <div className="final-cta-actions">
+            <Link to="/console" className="btn btn-primary btn-lg">
+              Enter GridSentinal
+              <svg className="btn-arrow" width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden="true">
+                <path d="M1 6h11M7.8 1.8 12 6l-4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Link>
+          </div>
+        </Reveal>
       </div>
     </section>
   );

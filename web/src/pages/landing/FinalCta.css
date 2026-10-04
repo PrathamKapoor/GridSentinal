@@ -78,6 +78,36 @@
   font-style: normal;
   color: var(--accent);
   text-shadow: 0 0 46px rgba(74, 222, 128, 0.4);
+  animation: cta-glow 3.6s ease-in-out infinite;
+}
+
+@keyframes cta-glow {
+  0%,
+  100% {
+    text-shadow: 0 0 30px rgba(74, 222, 128, 0.3);
+  }
+  50% {
+    text-shadow: 0 0 62px rgba(74, 222, 128, 0.62);
+  }
+}
+
+.final-cta-inner [data-reveal] {
+  will-change: opacity, transform;
+}
+
+.final-cta-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.final-cta-kicker::before,
+.final-cta-kicker::after {
+  content: "";
+  width: 26px;
+  height: 1px;
+  background: var(--line-strong);
+  display: inline-block;
 }
 
 .final-cta-lede {

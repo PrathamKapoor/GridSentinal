@@ -1,12 +1,24 @@
 import { Link } from "react-router-dom";
 import Grainient, { INDUSTRIAL_PARAMS } from "../../components/Grainient";
+import Marquee from "../../components/anim/Marquee";
 import "./FinalCta.css";
 
 const CTA_PARAMS = {
   ...INDUSTRIAL_PARAMS,
-  energy: 0.62,
+  colorA: [0.008, 0.022, 0.013] as [number, number, number],
+  colorB: [0.03, 0.09, 0.05] as [number, number, number],
+  colorC: [0.16, 0.55, 0.3] as [number, number, number],
+  colorD: [0.1, 0.45, 0.42] as [number, number, number],
+  energy: 0.72,
   vignette: 0.85,
 };
+
+const TICKER = [
+  "See what the system sees",
+  "Enter GridSentinal",
+  "Evidence, not optimism",
+  "Verified before it acts",
+];
 
 export default function FinalCta() {
   return (
@@ -15,10 +27,17 @@ export default function FinalCta() {
         <Grainient params={CTA_PARAMS} />
         <div className="final-cta-fade" />
       </div>
+
+      <div className="final-cta-ticker" aria-hidden="true">
+        <Marquee items={TICKER} speed={30} className="final-cta-marquee" />
+      </div>
+
       <div className="container final-cta-inner">
         <p className="final-cta-kicker mono">08 · Enter</p>
         <h2 className="final-cta-title">
-          See what the system sees.
+          See what the
+          <br />
+          system <em>sees.</em>
         </h2>
         <p className="final-cta-lede">
           The console reports the system's real, recorded state — the ingested
@@ -29,12 +48,8 @@ export default function FinalCta() {
         <div className="final-cta-actions">
           <Link to="/console" className="btn btn-primary btn-lg">
             Enter GridSentinal
-            <svg width="13" height="12" viewBox="0 0 13 12" fill="none" aria-hidden="true">
-              <path
-                d="M1 6h10M7.4 2.2 11.2 6 7.4 9.8"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              />
+            <svg className="btn-arrow" width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden="true">
+              <path d="M1 6h11M7.8 1.8 12 6l-4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </Link>
         </div>

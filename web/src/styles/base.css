@@ -121,6 +121,19 @@ a {
   display: inline-block;
   transform: rotate(45deg);
   flex: none;
+  animation: kicker-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes kicker-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.35);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(74, 222, 128, 0);
+    opacity: 0.75;
+  }
 }
 
 .section-heading {
@@ -159,45 +172,58 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  padding: 11px 20px;
-  border-radius: var(--radius-2);
-  font-size: 0.94rem;
+  gap: 10px;
+  padding: 13px 26px;
+  border-radius: var(--radius-pill);
+  font-size: 0.96rem;
   font-weight: 600;
   letter-spacing: -0.005em;
   border: 1px solid transparent;
-  transition: background-color 140ms ease, border-color 140ms ease,
-    color 140ms ease, transform 140ms ease;
+  transition: background-color 180ms ease, border-color 180ms ease,
+    color 180ms ease, transform 180ms cubic-bezier(0.2, 0.8, 0.3, 1.2),
+    box-shadow 180ms ease;
   white-space: nowrap;
 }
 
 .btn:active {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.99);
 }
 
 .btn-primary {
   background: var(--accent);
   color: var(--accent-ink);
+  box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
 }
 
 .btn-primary:hover {
   background: var(--accent-bright);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 34px var(--accent-glow);
 }
 
 .btn-secondary {
   border-color: var(--line-strong);
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(134, 239, 172, 0.03);
 }
 
 .btn-secondary:hover {
   border-color: var(--accent);
   color: var(--accent-bright);
+  transform: translateY(-2px);
 }
 
 .btn-sm {
-  padding: 7px 14px;
-  font-size: 0.85rem;
+  padding: 9px 18px;
+  font-size: 0.86rem;
+}
+
+.btn .btn-arrow {
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.3, 1.4);
+}
+
+.btn:hover .btn-arrow {
+  transform: translateX(4px);
 }
 
 /* ---------- chips & status ---------- */

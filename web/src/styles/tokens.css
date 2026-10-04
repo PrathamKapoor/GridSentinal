@@ -1,39 +1,41 @@
 /* GridSentinal design tokens.
-   Dark industrial palette: graphite foundation, one signal cyan for energy,
-   green for verified states, amber for uncertainty/warning, red used sparingly
-   for measured failures. */
+   Deep-green industrial palette: a living, energetic feel on a dark
+   forest foundation. One spring-green signal color, teal-green for
+   verified states, softened amber for warnings, coral for measured
+   failures. Geometry is soft: generous radii everywhere. */
 
 :root {
   /* surfaces */
-  --bg-0: #05070a;
-  --bg-1: #090c11;
-  --bg-2: #0e1219;
-  --bg-3: #131826;
-  --bg-4: #181f2e;
+  --bg-0: #020a06;
+  --bg-1: #04110a;
+  --bg-2: #071a10;
+  --bg-3: #0a2416;
+  --bg-4: #0f3220;
 
   /* hairlines */
-  --line: #1b2230;
-  --line-strong: #2a3444;
+  --line: #14301f;
+  --line-strong: #1f4a2f;
 
   /* text */
-  --text-1: #e9edf3;
-  --text-2: #9ba8b8;
-  --text-3: #637082;
+  --text-1: #ecf6ef;
+  --text-2: #9cc2a8;
+  --text-3: #5f8a70;
 
   /* signal colors */
-  --accent: #58b8e3;
-  --accent-bright: #8fd4f2;
-  --accent-ink: #06202c; /* text on accent fills */
-  --accent-dim: rgba(88, 184, 227, 0.13);
+  --accent: #4ade80;
+  --accent-bright: #86efac;
+  --accent-ink: #04190c; /* text on accent fills */
+  --accent-dim: rgba(74, 222, 128, 0.12);
+  --accent-glow: rgba(74, 222, 128, 0.28);
 
-  --ok: #4fc08d;
-  --ok-dim: rgba(79, 192, 141, 0.12);
+  --ok: #2dd4a0;
+  --ok-dim: rgba(45, 212, 160, 0.12);
 
-  --warn: #d9a83f;
-  --warn-dim: rgba(217, 168, 63, 0.12);
+  --warn: #e3c065;
+  --warn-dim: rgba(227, 192, 101, 0.12);
 
-  --fail: #e0685c;
-  --fail-dim: rgba(224, 104, 92, 0.12);
+  --fail: #ef7b6a;
+  --fail-dim: rgba(239, 123, 106, 0.12);
 
   /* typography */
   --font-ui: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI",
@@ -41,13 +43,16 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono",
     Menlo, Consolas, monospace;
 
-  /* geometry */
-  --radius-1: 3px;
-  --radius-2: 5px;
-  --radius-3: 8px;
-  --container: 1128px;
+  /* geometry - soft, generous */
+  --radius-1: 8px;
+  --radius-2: 13px;
+  --radius-3: 22px;
+  --radius-4: 30px;
+  --radius-pill: 999px;
+  --container: 1140px;
 
-  /* elevation (restrained) */
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 8px 32px rgba(0, 0, 0, 0.45);
+  /* elevation (soft, green-cast) */
+  --shadow-1: 0 2px 6px rgba(1, 8, 4, 0.5);
+  --shadow-2: 0 18px 60px rgba(1, 10, 5, 0.6);
+  --shadow-glow: 0 0 80px rgba(74, 222, 128, 0.16);
 }

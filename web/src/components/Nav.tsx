@@ -25,44 +25,46 @@ export default function Nav() {
   useEffect(() => () => setOpen(false), []);
 
   return (
-    <header className={`nav ${scrolled || open ? "nav--solid" : ""}`}>
-      <div className="container nav-inner">
-        <Link to="/" className="nav-brand" aria-label="GridSentinal home">
-          <Logo />
-          <span className="nav-wordmark">
-            GridSentinal
-            <span className="nav-wordmark-suffix">research</span>
-          </span>
-        </Link>
-
-        <nav className="nav-links" aria-label="Site">
-          {LINKS.map((l) => (
-            <a key={l.href} href={l.href} className="nav-link">
-              {l.label}
-            </a>
-          ))}
-        </nav>
-
-        <div className="nav-right">
-          <span className="chip nav-status" title="Phases 1-8 of 20 complete">
-            <span className="chip-dot" />
-            Phase 8 / 20 · research
-          </span>
-          <Link to="/console" className="btn btn-primary btn-sm nav-cta">
-            Enter console
+    <>
+      <header className={`nav ${scrolled || open ? "nav--solid" : ""}`}>
+        <div className="nav-shell">
+          <Link to="/" className="nav-brand" aria-label="GridSentinal home">
+            <Logo />
+            <span className="nav-wordmark">
+              GridSentinal
+              <span className="nav-wordmark-suffix">research</span>
+            </span>
           </Link>
-          <button
-            className="nav-burger"
-            aria-expanded={open}
-            aria-controls="mobile-menu"
-            aria-label={open ? "Close menu" : "Open menu"}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <span className={`nav-burger-bar ${open ? "is-open" : ""}`} />
-            <span className={`nav-burger-bar ${open ? "is-open" : ""}`} />
-          </button>
+
+          <nav className="nav-links" aria-label="Site">
+            {LINKS.map((l) => (
+              <a key={l.href} href={l.href} className="nav-link">
+                {l.label}
+              </a>
+            ))}
+          </nav>
+
+          <div className="nav-right">
+            <span className="chip nav-status" title="Phases 1-8 of 20 complete">
+              <span className="chip-dot" />
+              Phase 8 / 20 · research
+            </span>
+            <Link to="/console" className="btn btn-primary btn-sm nav-cta">
+              Enter console
+            </Link>
+            <button
+              className="nav-burger"
+              aria-expanded={open}
+              aria-controls="mobile-menu"
+              aria-label={open ? "Close menu" : "Open menu"}
+              onClick={() => setOpen((v) => !v)}
+            >
+              <span className={`nav-burger-bar ${open ? "is-open" : ""}`} />
+              <span className={`nav-burger-bar ${open ? "is-open" : ""}`} />
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
       <div
         id="mobile-menu"
@@ -87,6 +89,6 @@ export default function Nav() {
           Enter console
         </Link>
       </div>
-    </header>
+    </>
   );
 }

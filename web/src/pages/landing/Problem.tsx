@@ -1,4 +1,7 @@
 import SectionHead from "../../components/SectionHead";
+import Reveal from "../../components/anim/Reveal";
+import WordReveal from "../../components/anim/WordReveal";
+import { DATASET_FACTS } from "../../data/system";
 import "./Problem.css";
 
 const TENSIONS = [
@@ -38,17 +41,27 @@ export default function Problem() {
               Energy systems punish the difference.
             </>
           }
-          lede="Demand shifts, renewable generation is uncertain, models disagree, and every operational action carries consequences. GridSentinal exists to connect the forecast to the decision — with the uncertainty carried the whole way."
+        />
+        <WordReveal
+          className="problem-lede"
+          text="Demand shifts, renewable generation is uncertain, models disagree, and every operational action carries consequences. GridSentinal exists to connect the forecast to the decision — with the uncertainty carried the whole way."
         />
         <div className="problem-grid">
-          {TENSIONS.map((t) => (
-            <article className="problem-item" key={t.id}>
+          {TENSIONS.map((t, i) => (
+            <Reveal className="problem-item" key={t.id} delay={i * 90} as="article">
               <span className="problem-index mono">{t.id}</span>
               <h3>{t.title}</h3>
               <p>{t.body}</p>
-            </article>
+            </Reveal>
           ))}
         </div>
+        <Reveal delay={120}>
+          <p className="problem-foot mono">
+            {DATASET_FACTS.dataset} · {DATASET_FACTS.region} · feeder{" "}
+            {DATASET_FACTS.feeder} · {DATASET_FACTS.points} points @{" "}
+            {DATASET_FACTS.interval}
+          </p>
+        </Reveal>
       </div>
     </section>
   );

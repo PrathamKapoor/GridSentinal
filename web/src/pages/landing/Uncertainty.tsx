@@ -1,4 +1,5 @@
 import SectionHead from "../../components/SectionHead";
+import Reveal from "../../components/anim/Reveal";
 import DecileBars from "../../components/DecileBars";
 import evidence from "../../data/evidence.json";
 import "./Uncertainty.css";
@@ -49,6 +50,7 @@ export default function Uncertainty() {
         />
 
         <div className="uncertainty-grid">
+          <Reveal className="uncertainty-reveal">
           <div className="panel uncertainty-table-panel">
             <div className="panel-head">
               <span className="panel-title">
@@ -100,7 +102,9 @@ export default function Uncertainty() {
               <DecileBars deciles={h1.deciles} />
             </div>
           </div>
+          </Reveal>
 
+          <Reveal delay={140} className="uncertainty-reveal">
           <div className="panel uncertainty-failure">
             <div className="panel-head">
               <span className="panel-title">The negative finding</span>
@@ -168,6 +172,7 @@ export default function Uncertainty() {
               </p>
             </div>
           </div>
+          </Reveal>
         </div>
       </div>
     </section>

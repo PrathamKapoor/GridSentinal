@@ -24,7 +24,7 @@ export default function Logo({ size = 22 }: { size?: number }) {
         strokeWidth="1.6"
         strokeLinecap="square"
       />
-      <circle cx="16.5" cy="8" r="1.3" fill="#58b8e3" />
+      <circle cx="16.5" cy="8" r="1.3" fill="#4ade80" />
     </svg>
   );
 }

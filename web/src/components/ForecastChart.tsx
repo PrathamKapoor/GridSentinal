@@ -153,7 +153,7 @@ export default function ForecastChart({
 
         {/* interval band + point line */}
         <path d={geom.band} className="chart-band" />
-        <path d={`M ${geom.line}`} className="chart-line" />
+        <path d={`M ${geom.line}`} className="chart-line" pathLength={1} />
 
         {/* x labels */}
         {geom.xTicks.map((i) => (
@@ -167,7 +167,7 @@ export default function ForecastChart({
             {fmtTime(timestamps[i]!)}
           </text>
         ))}
-        <text x={PAD.left - 8} y={PAD.top - 4} className="chart-unit" textAnchor="end">
+        <text x={PAD.left - 8} y={8} className="chart-unit" textAnchor="end">
           {unit}
         </text>
 

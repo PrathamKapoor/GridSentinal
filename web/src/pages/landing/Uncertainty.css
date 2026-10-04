@@ -5,6 +5,10 @@
   align-items: start;
 }
 
+.uncertainty-reveal {
+  min-width: 0;
+}
+
 /* ---------- deciles block ---------- */
 
 .uncertainty-deciles {

@@ -1,4 +1,5 @@
 import SectionHead from "../../components/SectionHead";
+import Reveal from "../../components/anim/Reveal";
 import ForecastChart from "../../components/ForecastChart";
 import evidence from "../../data/evidence.json";
 import { DATASET_FACTS } from "../../data/system";
@@ -69,8 +70,9 @@ export default function ProductPreview() {
           lede="A command center for one feeder: live demand and generation, a forecast that carries its own calibrated interval, and a decision pipeline that shows why an action is allowed to move. Everything below is rendered from the repository's recorded experiment output."
         />
 
-        <div className="console">
-          <div className="console-chrome">
+        <Reveal rise={40}>
+          <div className="console">
+            <div className="console-chrome">
             <span className="console-crumb mono">
               GRIDSENTINAL <span className="console-crumb-sep">/</span>{" "}
               FEEDER P1UHS0_1247
@@ -195,14 +197,17 @@ export default function ProductPreview() {
               </div>
             </aside>
           </div>
-        </div>
+          </div>
+        </Reveal>
 
-        <p className="console-foot source-note">
-          Demonstration console, not a live system. The chart is recorded
-          Phase 8 output (conformal_state, sealed test split) on real SMART-DS
-          telemetry; system figures come from Phase 3's verified ingestion.
-          The command center itself is Phase 19 of the roadmap.
-        </p>
+        <Reveal delay={160}>
+          <p className="console-foot source-note">
+            Demonstration console, not a live system. The chart is recorded
+            Phase 8 output (conformal_state, sealed test split) on real SMART-DS
+            telemetry; system figures come from Phase 3's verified ingestion.
+            The command center itself is Phase 19 of the roadmap.
+          </p>
+        </Reveal>
       </div>
     </section>
   );

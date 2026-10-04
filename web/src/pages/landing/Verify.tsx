@@ -1,4 +1,5 @@
 import SectionHead from "../../components/SectionHead";
+import Reveal from "../../components/anim/Reveal";
 import "./Verify.css";
 
 const STEPS = [
@@ -66,7 +67,7 @@ export default function Verify() {
 
         <ol className="verify-steps" aria-label="Decision verification sequence">
           {STEPS.map((s, i) => (
-            <li className="verify-step" key={s.label}>
+            <Reveal as="li" className="verify-step" key={s.label} delay={i * 100}>
               <div className="verify-step-node">
                 <span className="verify-step-index mono">
                   {String(i + 1).padStart(2, "0")}
@@ -86,10 +87,11 @@ export default function Verify() {
                   </svg>
                 </span>
               )}
-            </li>
+            </Reveal>
           ))}
         </ol>
 
+        <Reveal delay={80}>
         <div className="verify-discipline">
           <h3 className="verify-discipline-title">
             What already runs — the discipline, measured
@@ -103,6 +105,7 @@ export default function Verify() {
             ))}
           </div>
         </div>
+        </Reveal>
       </div>
     </section>
   );

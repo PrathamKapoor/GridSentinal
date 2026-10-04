@@ -3,7 +3,8 @@
   overflow: hidden;
   border-top: 1px solid var(--line);
   background: var(--bg-0);
-  padding-block: 140px;
+  padding-top: 0;
+  padding-bottom: 150px;
 }
 
 .final-cta-atmosphere {
@@ -17,10 +18,35 @@
   background: radial-gradient(
       90% 120% at 50% 115%,
       transparent 0%,
-      rgba(5, 7, 10, 0.6) 62%,
-      rgba(5, 7, 10, 0.9) 100%
+      rgba(2, 10, 6, 0.6) 62%,
+      rgba(2, 10, 6, 0.92) 100%
     ),
-    linear-gradient(180deg, var(--bg-0) 0%, transparent 26%);
+    linear-gradient(180deg, var(--bg-0) 0%, transparent 30%);
+}
+
+.final-cta-ticker {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  background: rgba(2, 10, 6, 0.6);
+}
+
+.final-cta-marquee .marquee-item {
+  font-family: var(--font-mono);
+  font-size: clamp(1.5rem, 4vw, 2.6rem);
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(134, 239, 172, 0.4);
+  padding-block: 26px;
+  gap: 40px;
+  padding-right: 40px;
+}
+
+.final-cta-marquee .marquee-sep {
+  font-size: 0.5em;
+  color: var(--accent);
+  -webkit-text-stroke: 0;
 }
 
 .final-cta-inner {
@@ -29,6 +55,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding-top: 110px;
 }
 
 .final-cta-kicker {
@@ -39,16 +66,22 @@
 }
 
 .final-cta-title {
-  margin-top: 18px;
-  font-size: clamp(2.1rem, 5vw, 3.4rem);
-  font-weight: 640;
-  letter-spacing: -0.03em;
-  line-height: 1.06;
-  font-variation-settings: "wght" 640;
+  margin-top: 20px;
+  font-size: clamp(2.6rem, 6.6vw, 5.2rem);
+  font-weight: 660;
+  letter-spacing: -0.038em;
+  line-height: 1.02;
+  font-variation-settings: "wght" 660;
+}
+
+.final-cta-title em {
+  font-style: normal;
+  color: var(--accent);
+  text-shadow: 0 0 46px rgba(74, 222, 128, 0.4);
 }
 
 .final-cta-lede {
-  margin-top: 18px;
+  margin-top: 20px;
   max-width: 36em;
   color: var(--text-2);
   font-size: 1.02rem;
@@ -56,13 +89,13 @@
 }
 
 .final-cta-actions {
-  margin-top: 34px;
+  margin-top: 36px;
   display: flex;
   gap: 14px;
   justify-content: center;
 }
 
 .btn-lg {
-  padding: 13px 26px;
-  font-size: 1rem;
+  padding: 15px 30px;
+  font-size: 1.02rem;
 }

@@ -30,15 +30,15 @@ export interface GrainientParams {
 }
 
 export const INDUSTRIAL_PARAMS: GrainientParams = {
-  colorA: [0.016, 0.02, 0.028],
-  colorB: [0.05, 0.065, 0.085],
-  colorC: [0.18, 0.42, 0.55],
-  colorD: [0.12, 0.4, 0.3],
+  colorA: [0.008, 0.022, 0.013],
+  colorB: [0.03, 0.09, 0.05],
+  colorC: [0.16, 0.55, 0.3],
+  colorD: [0.1, 0.45, 0.42],
   noiseScale: 2.1,
   warpAmp: 0.55,
-  energy: 0.5,
+  energy: 0.6,
   grain: 0.028,
-  vignette: 0.75,
+  vignette: 0.8,
   speed: 0.045,
 };
 

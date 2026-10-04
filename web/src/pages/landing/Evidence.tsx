@@ -1,4 +1,6 @@
 import SectionHead from "../../components/SectionHead";
+import Reveal from "../../components/anim/Reveal";
+import CountUp from "../../components/anim/CountUp";
 import evidence from "../../data/evidence.json";
 import "./Evidence.css";
 
@@ -50,6 +52,7 @@ export default function Evidence() {
           lede="Models are evaluated, challenged, and retained only when evidence supports them. The project is comfortable publishing what failed — the failures are the reason the surviving numbers mean something."
         />
 
+        <Reveal>
         <div className="evidence-table panel">
           <div className="panel-head">
             <span className="panel-title">
@@ -105,10 +108,12 @@ export default function Evidence() {
             opportunity, not a capability claim.
           </p>
         </div>
+        </Reveal>
 
         <div className="evidence-negatives">
-          {NEGATIVES.map((n) => (
-            <article className="panel evidence-negative" key={n.id}>
+          {NEGATIVES.map((n, i) => (
+            <Reveal key={n.id} delay={i * 110} as="article" className="evidence-negative-reveal">
+            <article className="panel evidence-negative">
               <div className="panel-head">
                 <span className="panel-title">{n.id}</span>
                 <span className="chip chip--warn">
@@ -116,21 +121,23 @@ export default function Evidence() {
                   {n.verdict}
                 </span>
               </div>
-              <div className="evidence-negative-body">
-                <h3>{n.title}</h3>
-                <p>{n.body}</p>
-              </div>
+                <div className="evidence-negative-body">
+                  <h3>{n.title}</h3>
+                  <p>{n.body}</p>
+                </div>
             </article>
+            </Reveal>
           ))}
         </div>
 
+        <Reveal delay={100}>
         <div className="evidence-strip" role="list" aria-label="Process facts">
           <div className="evidence-strip-item" role="listitem">
-            <span className="evidence-strip-value mono">1,235</span>
+            <span className="evidence-strip-value mono"><CountUp value={1235} /></span>
             <span className="evidence-strip-label">tests passing</span>
           </div>
           <div className="evidence-strip-item" role="listitem">
-            <span className="evidence-strip-value mono">29</span>
+            <span className="evidence-strip-value mono"><CountUp value={29} /></span>
             <span className="evidence-strip-label">experiments registered</span>
           </div>
           <div className="evidence-strip-item" role="listitem">
@@ -144,6 +151,7 @@ export default function Evidence() {
             </span>
           </div>
         </div>
+        </Reveal>
       </div>
     </section>
   );

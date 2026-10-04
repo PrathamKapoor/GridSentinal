@@ -1,4 +1,5 @@
 import SectionHead from "../../components/SectionHead";
+import Reveal from "../../components/anim/Reveal";
 import "./Architecture.css";
 
 interface ComponentRow {
@@ -96,8 +97,8 @@ export default function Architecture() {
         />
 
         <div className="arch" role="list" aria-label="System architecture layers">
-          {STACK.map((c) => (
-            <div className="arch-row" role="listitem" key={c.name}>
+          {STACK.map((c, i) => (
+            <Reveal key={c.name} delay={Math.min(i * 60, 480)} role="listitem" className="arch-row">
               <span className="arch-node" aria-hidden="true" />
               <div className="arch-name">
                 <span className="arch-name-text mono">{c.name}</span>
@@ -109,11 +110,13 @@ export default function Architecture() {
                   {c.phase}
                 </span>
               </div>
-            </div>
+            </Reveal>
           ))}
-          <div className="arch-loopback mono" aria-hidden="true">
-            ↺ outcomes return to telemetry — the loop closes
-          </div>
+          <Reveal delay={200}>
+            <div className="arch-loopback mono" aria-hidden="true">
+              ↺ outcomes return to telemetry — the loop closes
+            </div>
+          </Reveal>
         </div>
       </div>
     </section>

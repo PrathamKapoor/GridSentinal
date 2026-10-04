@@ -50,10 +50,13 @@
 .footer-col span {
   color: var(--text-2);
   font-size: 0.88rem;
+  width: fit-content;
+  transition: color 140ms ease, transform 180ms ease;
 }
 
 .footer-col a:hover {
   color: var(--accent-bright);
+  transform: translateX(3px);
 }
 
 .footer-bottom {

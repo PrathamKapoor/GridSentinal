@@ -24,27 +24,91 @@
   gap: 7px;
   text-align: left;
   border: 1px solid var(--line);
-  background: var(--bg-2);
+  background: linear-gradient(180deg, rgba(10, 36, 22, 0.45), rgba(7, 26, 16, 0.2));
   border-radius: var(--radius-2);
-  padding: 12px 14px 11px;
-  min-width: 118px;
-  transition: border-color 140ms ease, background-color 140ms ease,
-    transform 140ms ease;
+  padding: 13px 16px 12px;
+  min-width: 122px;
+  transition: border-color 160ms ease, background-color 160ms ease,
+    transform 200ms cubic-bezier(0.2, 0.8, 0.3, 1.2), box-shadow 200ms ease;
 }
 
 .loop-node:hover {
   border-color: var(--line-strong);
   background: var(--bg-3);
+  transform: translateY(-2px);
 }
 
 .loop-node.is-active {
   border-color: var(--accent);
   background: var(--bg-3);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 36px rgba(74, 222, 128, 0.14);
 }
 
 .loop-node.is-operational .loop-node-index {
   color: var(--accent);
+}
+
+/* sequential pulse through the operational segment */
+.loop-node.is-operational .loop-node-status::after {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+  animation: loop-stage-pulse 2.4s ease-in-out infinite;
+}
+
+.loop-node-wrap:nth-child(1) .loop-node-status::after {
+  animation-delay: 0s;
+}
+.loop-node-wrap:nth-child(2) .loop-node-status::after {
+  animation-delay: 0.3s;
+}
+.loop-node-wrap:nth-child(3) .loop-node-status::after {
+  animation-delay: 0.6s;
+}
+.loop-node-wrap:nth-child(4) .loop-node-status::after {
+  animation-delay: 0.9s;
+}
+
+@keyframes loop-stage-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 6px 1px rgba(74, 222, 128, 0.5);
+  }
+}
+
+/* flowing energy in the arrows between operational stages */
+.loop-arrow.is-operational {
+  color: var(--accent);
+  animation: arrow-flow 2.4s ease-in-out infinite;
+}
+
+.loop-node-wrap:nth-child(2) .loop-arrow.is-operational {
+  animation-delay: 0.3s;
+}
+
+.loop-node-wrap:nth-child(3) .loop-arrow.is-operational {
+  animation-delay: 0.6s;
+}
+
+@keyframes arrow-flow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .loop-node-index {

@@ -1,3 +1,7 @@
+/**
+ * GridSentinal mark: a sentinel orbit. One ring carries a signal node;
+ * an energy pulse crosses the centre. Reads at 16px, scales cleanly.
+ */
 export default function Logo({ size = 22 }: { size?: number }) {
   return (
     <svg
@@ -8,23 +12,35 @@ export default function Logo({ size = 22 }: { size?: number }) {
       aria-hidden="true"
       focusable="false"
     >
-      {/* the loop: observe -> predict -> verify -> act, drawn as one circuit */}
-      <rect
-        x="3.5"
-        y="3.5"
-        width="17"
-        height="17"
-        rx="1.5"
-        stroke="currentColor"
-        strokeOpacity="0.35"
-      />
+      <defs>
+        <linearGradient id="gs-pulse" x1="4" y1="16" x2="20" y2="8" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#2f9e63" />
+          <stop offset="0.55" stopColor="#4ade80" />
+          <stop offset="1" stopColor="#c9fbdd" />
+        </linearGradient>
+      </defs>
+
+      {/* orbit ring, open where the sentinel sits */}
       <path
-        d="M7.5 15.5V8.5H12a2.5 2.5 0 0 1 0 5H8.2"
+        d="M17.83 6.17 A 8.25 8.25 0 1 0 20.25 12"
         stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="square"
+        strokeOpacity="0.5"
+        strokeWidth="1.5"
+        strokeLinecap="round"
       />
-      <circle cx="16.5" cy="8" r="1.3" fill="#4ade80" />
+
+      {/* energy pulse */}
+      <path
+        d="M4.4 12h3.2l1.65-3.8 2.5 7.6 1.65-3.8h4.1"
+        stroke="url(#gs-pulse)"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* sentinel node on the ring */}
+      <circle cx="17.83" cy="6.17" r="1.9" fill="#4ade80" />
+      <circle cx="17.83" cy="6.17" r="3.1" stroke="#4ade80" strokeOpacity="0.35" />
     </svg>
   );
 }

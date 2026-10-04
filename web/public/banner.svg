@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" fill="none" role="img" aria-label="GridSentinal: energy intelligence that knows when to act">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#04110a"/>
+      <stop offset="0.55" stop-color="#06170e"/>
+      <stop offset="1" stop-color="#020a06"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.28" cy="0.12" r="0.75">
+      <stop offset="0" stop-color="#4ade80" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#4ade80" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.82" cy="0.95" r="0.85">
+      <stop offset="0" stop-color="#2dd4a0" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#2dd4a0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pulse" x1="4" y1="16" x2="20" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f9e63"/>
+      <stop offset="0.55" stop-color="#4ade80"/>
+      <stop offset="1" stop-color="#c9fbdd"/>
+    </linearGradient>
+    <linearGradient id="fade-edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="ticker-mask">
+      <rect x="0" y="0" width="1280" height="64" fill="url(#fade-edge)"/>
+    </mask>
+  </defs>
+
+  <!-- atmosphere -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glowA)"/>
+  <rect width="1280" height="640" fill="url(#glowB)"/>
+
+  <!-- faint grid, like engineering paper -->
+  <g stroke="#4ade80" stroke-opacity="0.05">
+    <path d="M0 80h1280M0 160h1280M0 240h1280M0 320h1280M0 400h1280M0 480h1280M0 560h1280"/>
+    <path d="M80 0v640M160 0v640M240 0v640M320 0v640M400 0v640M480 0v640M560 0v640M640 0v640M720 0v640M800 0v640M880 0v640M960 0v640M1040 0v640M1120 0v640M1200 0v640"/>
+  </g>
+
+  <!-- top ticker -->
+  <g mask="url(#ticker-mask)">
+    <text x="72" y="40" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="17" letter-spacing="4" fill="#9cc2a8" fill-opacity="0.75">OBSERVE ◆ PREDICT ◆ QUANTIFY ◆ VERIFY ◆ ACT ◆ LEARN ◆ OBSERVE ◆ PREDICT ◆ QUANTIFY ◆ VERIFY ◆ ACT ◆ LEARN</text>
+    <line x1="0" y1="64" x2="1280" y2="64" stroke="#14301f"/>
+  </g>
+
+  <!-- mark -->
+  <g transform="translate(92 232) scale(6.4)">
+    <path d="M17.83 6.17 A 8.25 8.25 0 1 0 20.25 12" stroke="#ecf6ef" stroke-opacity="0.55" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M4.4 12h3.2l1.65-3.8 2.5 7.6 1.65-3.8h4.1" stroke="url(#pulse)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="17.83" cy="6.17" r="1.9" fill="#4ade80"/>
+    <circle cx="17.83" cy="6.17" r="3.1" stroke="#4ade80" stroke-opacity="0.35"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="220" y="316" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="96" font-weight="660" letter-spacing="-3" fill="#ecf6ef">GridSentinal</text>
+
+  <!-- tagline -->
+  <text x="224" y="386" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="34" font-weight="500" letter-spacing="-0.4" fill="#4ade80">Energy intelligence that knows when to act.</text>
+
+  <!-- micro line -->
+  <text x="224" y="452" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" letter-spacing="3.2" fill="#637f6e">ADAPTIVE · SELF-VERIFYING ENERGY MANAGEMENT</text>
+
+  <!-- bottom facts -->
+  <line x1="92" y1="540" x2="1188" y2="540" stroke="#14301f"/>
+  <text x="92" y="584" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="17" letter-spacing="2.4" fill="#9cc2a8" fill-opacity="0.8">SMART-DS FEEDER · 35,040 TELEMETRY POINTS · CALIBRATED 90% INTERVALS · 1,235 TESTS PASSING</text>
+</svg>

@@ -1,5 +1,7 @@
 # Energy Intelligence
 
+![GridSentinal](web/public/banner.svg)
+
 **Adaptive, self-verifying energy management** — Yuva Yodha Energy Tech Hackathon 2026, Schneider Electric.
 
 The project aims to answer one question:

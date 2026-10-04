@@ -85,7 +85,7 @@ export default function Architecture() {
     <section className="section" id="architecture">
       <div className="container">
         <SectionHead
-          index="07"
+          index="11"
           kicker="Architecture"
           title="How the components relate."
           lede="The target architecture, with each boundary held explicit and each layer's real status. Nothing is marked operational that has not been run end to end against the sealed test split."

@@ -124,9 +124,9 @@ export const DATASET_FACTS = {
 
 /** Process facts that make the work checkable. */
 export const PROCESS_FACTS = {
-  tests: "1,235",
-  experiments: 29,
-  decisionRecords: "D-109",
+  tests: "1,356",
+  experiments: 30,
+  decisionRecords: "D-130",
   loopStagesLive: 4,
   loopStagesTotal: LOOP.length,
 };

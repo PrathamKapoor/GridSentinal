@@ -411,6 +411,66 @@ section {
   padding: 2px 7px;
 }
 
+.cnote--tight {
+  margin-top: 18px;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ---------- console entry points ---------- */
+
+.centries {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.centry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
+  background: var(--c-sunken);
+  min-width: 0;
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+
+.centry:hover {
+  border-color: var(--c-line-2);
+  transform: translateY(-2px);
+}
+
+.centry-cmd {
+  font-size: 0.8rem;
+  color: var(--c-ink);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow-wrap: anywhere;
+}
+
+.centry-group {
+  color: var(--c-faint);
+}
+
+.centry-sep {
+  color: var(--c-line-2);
+}
+
+.centry-name {
+  color: var(--c-brand-strong);
+  font-weight: 600;
+}
+
+.centry-body {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--c-muted);
+}
+
 /* ---------- footer ---------- */
 
 .cfoot {
@@ -439,6 +499,9 @@ section {
   .ccards {
     grid-template-columns: 1fr;
   }
+  .centries {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .cstats {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -465,6 +528,9 @@ section {
 }
 
 @media (max-width: 560px) {
+  .centries {
+    grid-template-columns: 1fr;
+  }
   .cstats {
     grid-template-columns: 1fr;
   }

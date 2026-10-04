@@ -64,9 +64,15 @@ export default function ProductPreview() {
     <section className="section" id="product">
       <div className="container">
         <SectionHead
-          index="03"
+          index="10"
           kicker="The product"
-          title="What the system sees."
+          title={
+            <>
+              The grid,
+              <br />
+              as a <em>system.</em>
+            </>
+          }
           lede="A command center for one feeder: live demand and generation, a forecast that carries its own calibrated interval, and a decision pipeline that shows why an action is allowed to move. Everything below is rendered from the repository's recorded experiment output."
         />
 

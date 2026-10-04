@@ -145,6 +145,13 @@ a {
   max-width: 21em;
 }
 
+/* emphasis inside a section headline: the accent carries the point */
+.section-heading em {
+  font-style: normal;
+  color: var(--accent);
+  text-shadow: 0 0 42px rgba(74, 222, 128, 0.3);
+}
+
 .section-lede {
   margin-top: 16px;
   max-width: 44em;

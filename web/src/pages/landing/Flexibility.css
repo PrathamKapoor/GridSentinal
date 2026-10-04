@@ -1,0 +1,215 @@
+/* ---------- the three bases ---------- */
+
+.flex-layers {
+  margin-top: 54px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.flex-card {
+  height: 100%;
+  padding: 26px 26px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: linear-gradient(180deg, rgba(10, 36, 22, 0.5), rgba(7, 26, 16, 0.28));
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.3, 1.1), border-color 260ms ease,
+    box-shadow 260ms ease;
+}
+
+/* a tone rule along the top edge so the three read apart at a glance */
+.flex-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--line-strong);
+}
+
+.flex-card--unknown::before {
+  background: linear-gradient(90deg, var(--fail), transparent 78%);
+}
+.flex-card--available::before {
+  background: linear-gradient(90deg, var(--ok), transparent 78%);
+}
+.flex-card--scenario::before {
+  background: linear-gradient(90deg, var(--warn), transparent 78%);
+}
+
+.flex-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-glow);
+}
+
+.flex-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.flex-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.flex-body {
+  margin-top: 16px;
+  color: var(--text-2);
+  font-size: 0.92rem;
+  line-height: 1.68;
+  flex: 1;
+}
+
+.flex-measures {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+}
+
+.flex-measure {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.flex-measure dt {
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
+
+.flex-measure dd {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---------- measured strip ---------- */
+
+.flex-measured {
+  margin-top: 22px;
+}
+
+.flex-panel {
+  padding-bottom: 22px;
+}
+
+.flex-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  padding: 24px 4px 8px;
+}
+
+.flex-strip-item {
+  text-align: center;
+  padding: 18px 14px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  background: rgba(4, 17, 10, 0.5);
+}
+
+.flex-strip-h {
+  display: block;
+  font-size: 0.64rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.flex-strip-value {
+  display: block;
+  margin-top: 12px;
+  font-size: clamp(1.9rem, 4vw, 2.7rem);
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  color: var(--accent-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.flex-strip-label {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.flex-strip-sub {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+
+/* ---------- caveat ---------- */
+
+.flex-caveat {
+  margin-top: 26px;
+  display: flex;
+  gap: 18px;
+  padding: 26px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: rgba(4, 17, 10, 0.45);
+}
+
+.flex-caveat-mark {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--warn);
+  border-radius: 50%;
+  color: var(--warn);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.flex-caveat p {
+  color: var(--text-2);
+  font-size: 0.94rem;
+  line-height: 1.72;
+}
+
+.flex-caveat strong {
+  color: var(--text-1);
+  font-weight: 640;
+}
+
+.flex-caveat em {
+  font-style: italic;
+  color: var(--text-1);
+}
+
+@media (max-width: 960px) {
+  .flex-layers {
+    grid-template-columns: 1fr;
+  }
+  .flex-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .flex-caveat {
+    padding: 22px 20px;
+    gap: 14px;
+  }
+}

@@ -83,7 +83,26 @@ const SUBSYSTEMS: Subsystem[] = [
     status: "partial",
     layer: "modelling",
     detail:
-      "Representation exists in the domain (FlexibilityEstimate). Battery dispatch is unavailable in the dataset (G-01), a data blocker that is recorded, not simulated.",
+      "Phase 9 estimated a behavioural envelope and published it as statistical proxy / not controllable. 0 of 8 flexibility dimensions are physically supported by the dataset, so no dispatchable capability is claimed.",
+    facts: [
+      ["Physical support", "0 of 8 dimensions"],
+      ["Basis", "statistical proxy"],
+      ["Coverage @90%", "91.4 / 91.1 / 89.3%"],
+      ["Dispatchable", "no"],
+    ],
+  },
+  {
+    name: "Controlled feature ablation",
+    status: "partial",
+    layer: "experimentation",
+    detail:
+      "Phase 10 varied feature families with model, folds, seed and horizon held fixed. Load selected the 4-feature calendar set; PV selected the 5-feature lag set. The load selection did not survive confirmation, and that is reported.",
+    facts: [
+      ["Horizon", "H24 · 96 steps"],
+      ["Feature sets", "A → E · 4 to 13 features"],
+      ["Final test", "locked · read once"],
+      ["Robustness arm", "MLP · not run"],
+    ],
   },
   {
     name: "Energy-aware MLOps",
@@ -96,9 +115,31 @@ const SUBSYSTEMS: Subsystem[] = [
 
 const STATS: [string, ReactNode][] = [
   ["Loop stages live", "4 of 11"],
-  ["Tests passing", "1,235"],
-  ["Experiments registered", "29"],
+  ["Tests passing", "1,356"],
+  ["Experiments registered", "30"],
   ["Telemetry points", "35,040"],
+];
+
+/**
+ * The backend's real console entry points. These are verbatim subcommands of
+ * `python -m energy_intelligence console|ablation`, not a designed UI surface.
+ */
+interface ConsoleEntry {
+  group: "console" | "ablation";
+  name: string;
+  body: string;
+}
+
+const CONSOLE_ENTRIES: ConsoleEntry[] = [
+  { group: "console", name: "health", body: "System, config, data, models, integrity, phase" },
+  { group: "console", name: "status", body: "Every phase's recorded verdict, negative included" },
+  { group: "console", name: "data", body: "SMART-DS availability per target, and the unknowns" },
+  { group: "console", name: "config", body: "Active config, config directory, feature sets" },
+  { group: "console", name: "flexibility", body: "Physical / statistical / assumed, as three lines" },
+  { group: "console", name: "integrity", body: "Final-test state and protocol freeze" },
+  { group: "ablation", name: "smoke", body: "Fast end-to-end path, stamped NON_EVIDENCE_SMOKE" },
+  { group: "ablation", name: "run", body: "The frozen feature-set grid, selection then confirmation" },
+  { group: "ablation", name: "report", body: "Research tables and the completion report" },
 ];
 
 function StatusChip({ status }: { status: SubsystemStatus }) {
@@ -221,14 +262,41 @@ export default function Console() {
           </Reveal>
 
           <Reveal delay={120}>
+            <section aria-labelledby="centries">
+              <h2 id="centries" className="clabel csection-label">
+                Console entry points · verbatim subcommands
+              </h2>
+              <div className="centries">
+                {CONSOLE_ENTRIES.map((e) => (
+                  <div className="centry" key={`${e.group}-${e.name}`}>
+                    <code className="centry-cmd mono">
+                      <span className="centry-group">{e.group}</span>
+                      <span className="centry-sep">·</span>
+                      <span className="centry-name">{e.name}</span>
+                    </code>
+                    <span className="centry-body">{e.body}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="cnote cnote--tight">
+                Run from the repository root as{" "}
+                <code className="mono">
+                  python -m energy_intelligence console &lt;name&gt;
+                </code>
+                . These read artifacts earlier phases wrote; they never recompute a
+                result, and a missing measurement is printed as unknown rather than
+                as zero.
+              </p>
+            </section>
+          </Reveal>
+
+          <Reveal delay={120}>
             <p className="cnote">
               The command center, with live forecasts, decision pipelines and
-              simulation runs, is still under construction. Reproduce
-              everything shown here from the repository:{" "}
-              <code className="mono">
-                energy-intel uncertainty experiments
-              </code>{" "}
-              prints the recorded calibration result.
+              simulation runs, is still under construction. Reproduce everything
+              shown here from the repository:{" "}
+              <code className="mono">python -m energy_intelligence console status</code>{" "}
+              prints every phase with the verdict it actually reached.
             </p>
           </Reveal>
         </div>

@@ -1,0 +1,245 @@
+/* ---------- fork diagram ---------- */
+
+.experts-fork {
+  margin-top: 54px;
+  position: relative;
+}
+
+.fork-head {
+  display: flex;
+  justify-content: center;
+}
+
+.fork-node {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 11px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: rgba(10, 36, 22, 0.7);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.fork-node--root {
+  color: var(--text-1);
+  border-color: var(--accent);
+  box-shadow: 0 0 46px rgba(74, 222, 128, 0.16);
+}
+
+.fork-node--out {
+  color: var(--accent-bright);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+/* the three vertical rails: root -> experts, experts -> signal */
+.fork-rails {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  height: 44px;
+  margin-top: 4px;
+}
+
+.fork-rails--out {
+  margin-top: 4px;
+}
+
+.fork-rail {
+  position: relative;
+}
+
+/* a line down from the middle of each column, with a small stub reaching
+   toward the centre so the three read as one trunk splitting */
+.fork-rail::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, var(--line-strong), var(--accent));
+  opacity: 0.55;
+}
+
+.fork-rail::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.7);
+}
+
+.fork-rails--out .fork-rail::before {
+  background: linear-gradient(180deg, var(--accent), var(--line-strong));
+}
+
+.fork-rails--out .fork-rail::after {
+  top: -3px;
+  bottom: auto;
+}
+
+/* ---------- expert cards ---------- */
+
+.experts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.expert-card {
+  position: relative;
+  padding: 26px 26px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: linear-gradient(180deg, rgba(10, 36, 22, 0.55), rgba(7, 26, 16, 0.3));
+  display: flex;
+  flex-direction: column;
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.3, 1.1), border-color 260ms ease,
+    box-shadow 260ms ease;
+}
+
+.expert-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-glow);
+}
+
+.expert-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.expert-index {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+}
+
+.expert-name {
+  margin-top: 16px;
+  font-size: 1.32rem;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+}
+
+.expert-family {
+  margin-top: 6px;
+  font-size: 0.66rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.expert-blurb {
+  margin-top: 14px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.66;
+  flex: 1;
+}
+
+.expert-scores {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.expert-score dt {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.expert-score dd {
+  margin-top: 5px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- side notes ---------- */
+
+.experts-notes {
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.expert-note {
+  padding: 24px 26px 26px;
+  border-left: 2px solid var(--line-strong);
+  background: rgba(4, 17, 10, 0.4);
+  border-radius: 0 var(--radius-2) var(--radius-2) 0;
+  transition: border-color 240ms ease;
+}
+
+.expert-note:hover {
+  border-left-color: var(--accent);
+}
+
+.expert-note-label {
+  display: block;
+  font-size: 0.64rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.expert-note p {
+  margin-top: 12px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.66;
+}
+
+.expert-note strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.experts-foot {
+  margin-top: 28px;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+@media (max-width: 960px) {
+  .experts-grid,
+  .experts-notes {
+    grid-template-columns: 1fr;
+  }
+  .fork-rails {
+    display: none;
+  }
+  .fork-node {
+    white-space: normal;
+    text-align: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .expert-scores {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .expert-card {
+    padding: 22px 20px 24px;
+  }
+}

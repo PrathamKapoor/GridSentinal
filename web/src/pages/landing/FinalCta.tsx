@@ -16,7 +16,7 @@ const CTA_PARAMS = {
 
 const TICKER = [
   "See what the system sees",
-  "Enter GridSentinal",
+  "Open the command center",
   "Evidence, not optimism",
   "Verified before it acts",
 ];
@@ -35,18 +35,24 @@ export default function FinalCta() {
 
       <div className="container final-cta-inner">
         <Reveal delay={0}>
-          <p className="final-cta-kicker mono">08 · Enter</p>
+          <p className="final-cta-kicker mono">12 · Enter</p>
         </Reveal>
         <Reveal delay={110}>
           <h2 className="final-cta-title">
-            See what the
+            Don&rsquo;t just predict the grid.
             <br />
-            system <em>sees.</em>
+            <em>Verify what happens next.</em>
           </h2>
+        </Reveal>
+        <Reveal delay={190}>
+          <p className="final-cta-brand mono">
+            GridSentinal <span aria-hidden="true">·</span> Adaptive energy
+            intelligence
+          </p>
         </Reveal>
         <Reveal delay={230}>
           <p className="final-cta-lede">
-            The console reports the system's real, recorded state: the
+            The console reports the system&rsquo;s real, recorded state: the
             ingested feeder, the fixed ensemble, the calibration results, the
             experiment registry, and everything still on the roadmap. No mock
             data presented as live.
@@ -55,7 +61,7 @@ export default function FinalCta() {
         <Reveal delay={360}>
           <div className="final-cta-actions">
             <Link to="/console" className="btn btn-primary btn-lg">
-              Enter GridSentinal
+              Open command center
               <svg className="btn-arrow" width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden="true">
                 <path d="M1 6h11M7.8 1.8 12 6l-4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>

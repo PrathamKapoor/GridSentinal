@@ -4,6 +4,7 @@ import Marquee from "../../components/anim/Marquee";
 import ForecastChart from "../../components/ForecastChart";
 import evidence from "../../data/evidence.json";
 import { LOOP } from "../../data/system";
+import { HERO_META } from "../../data/landing";
 import "./Hero.css";
 
 interface ForecastSlice {
@@ -17,10 +18,10 @@ const slice = evidence.forecast_slice as ForecastSlice;
 
 const TICKER = [
   "35,040 telemetry points",
-  "1,235 tests passing",
+  "1,356 tests passing",
   "4 of 11 loop stages live",
   "Sealed test split · read once",
-  "29 experiments registered",
+  "30 experiments registered",
   "SMART-DS feeder · 2018",
   "90% calibrated intervals",
   "No claim without evidence",
@@ -55,22 +56,30 @@ export default function Hero() {
 
         <h1 className="hero-title">
           <span className="hero-line" data-hero-item style={{ "--i": 1 } as React.CSSProperties}>
-            Energy intelligence
+            Intelligence that doesn&rsquo;t
           </span>
           <span className="hero-line" data-hero-item style={{ "--i": 2 } as React.CSSProperties}>
-            that knows <em>when to act.</em>
+            just predict. <em>It verifies.</em>
           </span>
         </h1>
 
-        <p className="hero-lede" data-hero-item style={{ "--i": 3 } as React.CSSProperties}>
-          GridSentinal observes an energy system, forecasts what happens next,
-          and states how confident it is. Proposed actions are attacked,
-          simulated and verified before they execute. Evidence, not optimism.
+        <p
+          className="hero-descriptor mono"
+          data-hero-item
+          style={{ "--i": 3 } as React.CSSProperties}
+        >
+          Energy intelligence system for renewable-integrated grids
         </p>
 
-        <div className="hero-ctas" data-hero-item style={{ "--i": 4 } as React.CSSProperties}>
+        <p className="hero-lede" data-hero-item style={{ "--i": 4 } as React.CSSProperties}>
+          GridSentinal observes an energy system, forecasts what happens next, and
+          states how confident it is. Proposed actions are attacked, simulated and
+          verified before they execute. Evidence, not optimism.
+        </p>
+
+        <div className="hero-ctas" data-hero-item style={{ "--i": 5 } as React.CSSProperties}>
           <Link to="/console" className="btn btn-primary">
-            Enter GridSentinal
+            Open command center
             <svg className="btn-arrow" width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden="true">
               <path d="M1 6h11M7.8 1.8 12 6l-4.2 4.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -79,10 +88,23 @@ export default function Hero() {
             Explore the system
           </a>
         </div>
+
+        <ul
+          className="hero-meta"
+          data-hero-item
+          style={{ "--i": 6 } as React.CSSProperties}
+          aria-label="System facts"
+        >
+          {HERO_META.map((m) => (
+            <li className="hero-meta-item mono" key={m}>
+              {m}
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* live signal card - recorded model output, rises into view */}
-      <div className="container hero-card-wrap" data-hero-item style={{ "--i": 5 } as React.CSSProperties}>
+      <div className="container hero-card-wrap" data-hero-item style={{ "--i": 7 } as React.CSSProperties}>
         <div className="hero-card" aria-label="Recorded forecast preview">
           <div className="hero-card-head">
             <span className="hero-card-title mono">DEMAND · 1 H AHEAD · 90% INTERVAL</span>
@@ -110,7 +132,7 @@ export default function Hero() {
       </div>
 
       {/* full-bleed fact ticker */}
-      <div className="hero-ticker" data-hero-item style={{ "--i": 6 } as React.CSSProperties}>
+      <div className="hero-ticker" data-hero-item style={{ "--i": 8 } as React.CSSProperties}>
         <Marquee
           items={TICKER}
           speed={42}

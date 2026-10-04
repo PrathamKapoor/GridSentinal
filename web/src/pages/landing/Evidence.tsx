@@ -29,7 +29,7 @@ const NEGATIVES = [
   {
     id: "Router study",
     title: "Learned expert router",
-    verdict: `Negative, ${facts.horizons_router_beats_fixed_ensemble} of 3 horizons`,
+    verdict: `Negative · won ${facts.horizons_router_beats_fixed_ensemble} of 3`,
     body: "The diversity premise held (experts disagree on 59–75% of rows and 30–38% of achievable gain exists), but the learned gate captured −2% to 13% of it and lost to a fixed weighted ensemble everywhere.",
   },
   {
@@ -45,7 +45,7 @@ export default function Evidence() {
     <section className="section" id="evidence">
       <div className="container">
         <SectionHead
-          index="06"
+          index="08"
           kicker="Evidence"
           title="Every claim has a receipt."
           lede="Models are evaluated, challenged, and retained only when evidence supports them. The project is comfortable publishing what failed; the failures are the reason the surviving numbers mean something."
@@ -100,7 +100,7 @@ export default function Evidence() {
             </table>
           </div>
           <p className="table-note">
-            The learned router lost to the fixed weighted ensemble at{" "}
+            The learned router beat the fixed weighted ensemble at{" "}
             {facts.horizons_router_beats_fixed_ensemble} of 3 horizons, so the
             ensemble ships. The oracle row bounds what a perfect router would
             reach; the gap is the honest size of the remaining routing
@@ -132,15 +132,15 @@ export default function Evidence() {
         <Reveal delay={100}>
         <div className="evidence-strip" role="list" aria-label="Process facts">
           <div className="evidence-strip-item" role="listitem">
-            <span className="evidence-strip-value mono">1,235</span>
+            <span className="evidence-strip-value mono">1,356</span>
             <span className="evidence-strip-label">tests passing</span>
           </div>
           <div className="evidence-strip-item" role="listitem">
-            <span className="evidence-strip-value mono">29</span>
+            <span className="evidence-strip-value mono">30</span>
             <span className="evidence-strip-label">experiments registered</span>
           </div>
           <div className="evidence-strip-item" role="listitem">
-            <span className="evidence-strip-value mono">D-109</span>
+            <span className="evidence-strip-value mono">D-130</span>
             <span className="evidence-strip-label">decision records</span>
           </div>
           <div className="evidence-strip-item" role="listitem">

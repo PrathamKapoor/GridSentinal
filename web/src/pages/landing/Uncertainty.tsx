@@ -45,7 +45,13 @@ export default function Uncertainty() {
         <SectionHead
           index="04"
           kicker="Uncertainty"
-          title="Every forecast carries its own doubt, and says how much."
+          title={
+            <>
+              Know what you
+              <br />
+              don&rsquo;t <em>know.</em>
+            </>
+          }
           lede="GridSentinal does not stop at a point prediction. Six interval methods were fitted, calibrated and scored once on a sealed test split; the published procedure reports its own coverage, and the widths move with the difficulty of the day."
         />
 

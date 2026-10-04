@@ -56,12 +56,18 @@ const DISCIPLINE = [
 
 export default function Verify() {
   return (
-    <section className="section verify" id="verify">
+    <section className="section verify" id="decisions">
       <div className="container">
         <SectionHead
-          index="05"
+          index="06"
           kicker="Verify before act"
-          title="An action is not executed because it was proposed."
+          title={
+            <>
+              Before it acts, it tries
+              <br />
+              to <em>break the decision.</em>
+            </>
+          }
           lede="The loop's defining discipline: a candidate action must survive simulation, red-teaming and an assurance gate before it moves anything in the physical system. The machinery is specified; the culture behind it is already running."
         />
 

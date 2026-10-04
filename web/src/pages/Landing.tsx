@@ -3,13 +3,23 @@ import Footer from "../components/Footer";
 import Hero from "./landing/Hero";
 import Problem from "./landing/Problem";
 import LoopSection from "./landing/LoopSection";
-import ProductPreview from "./landing/ProductPreview";
+import Experts from "./landing/Experts";
 import Uncertainty from "./landing/Uncertainty";
+import Flexibility from "./landing/Flexibility";
 import Verify from "./landing/Verify";
+import Research from "./landing/Research";
 import Evidence from "./landing/Evidence";
+import Provenance from "./landing/Provenance";
+import ProductPreview from "./landing/ProductPreview";
 import Architecture from "./landing/Architecture";
 import FinalCta from "./landing/FinalCta";
 
+/**
+ * The landing narrative, in order:
+ *   problem -> loop -> experts -> uncertainty -> flexibility ->
+ *   self-verification -> research -> evidence -> provenance ->
+ *   architecture -> command center preview -> enter
+ */
 export default function Landing() {
   return (
     <>
@@ -18,11 +28,15 @@ export default function Landing() {
         <Hero />
         <Problem />
         <LoopSection />
-        <ProductPreview />
+        <Experts />
         <Uncertainty />
+        <Flexibility />
         <Verify />
+        <Research />
         <Evidence />
+        <Provenance />
         <Architecture />
+        <ProductPreview />
         <FinalCta />
       </main>
       <Footer />

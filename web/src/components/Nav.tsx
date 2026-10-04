@@ -3,11 +3,19 @@ import { Link } from "react-router-dom";
 import Logo from "./Logo";
 import "./Nav.css";
 
+/**
+ * Landing anchors. Every entry points at a section that exists on the page;
+ * there are no placeholder or dead links. `simulation` resolves to the
+ * architecture section, which is where the digital-twin layer and its real
+ * (specified, not implemented) status are documented.
+ */
 const LINKS = [
   { href: "/#system", label: "System" },
-  { href: "/#product", label: "Product" },
-  { href: "/#evidence", label: "Evidence" },
-  { href: "/#architecture", label: "Architecture" },
+  { href: "/#forecast", label: "Forecast" },
+  { href: "/#flexibility", label: "Flexibility" },
+  { href: "/#decisions", label: "Decisions" },
+  { href: "/#architecture", label: "Simulation" },
+  { href: "/#research", label: "Research" },
 ];
 
 export default function Nav() {
@@ -50,7 +58,7 @@ export default function Nav() {
               research system
             </span>
             <Link to="/console" className="btn btn-primary btn-sm nav-cta">
-              Enter console
+              Open console
             </Link>
             <button
               className="nav-burger"
@@ -86,7 +94,7 @@ export default function Nav() {
           className="btn btn-primary nav-mobile-cta"
           onClick={() => setOpen(false)}
         >
-          Enter console
+          Open console
         </Link>
       </div>
     </>

@@ -72,10 +72,10 @@
 
 .final-cta-title {
   margin-top: 20px;
-  font-size: clamp(2.6rem, 6.6vw, 5.2rem);
+  font-size: clamp(2.3rem, 5.6vw, 4.7rem);
   font-weight: 660;
   letter-spacing: -0.038em;
-  line-height: 1.02;
+  line-height: 1.04;
   font-variation-settings: "wght" 660;
 }
 
@@ -113,6 +113,14 @@
   height: 1px;
   background: var(--line-strong);
   display: inline-block;
+}
+
+.final-cta-brand {
+  margin-top: 18px;
+  font-size: 0.7rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
 .final-cta-lede {

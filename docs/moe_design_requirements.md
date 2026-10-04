@@ -1,15 +1,56 @@
 # Energy-MoE Design Requirements
 
-What a Mixture-of-Experts model for energy demand would require, and what Phases 5 and
-6 actually measured. This document is the input to Phase 7.
+What a Mixture-of-Experts model for energy demand would require, and what Phases 5, 6
+and 7 actually measured. **This document has been superseded as the plan.** It was the
+input to Phase 7; Phase 7 answered it, and the architecture it proposed was not built.
 
-It was first written after Phase 5, from regime evidence alone. It has now been
-**rewritten against Phase 6's results**, because Phase 6 changed the picture in one
-important way: the strongest single signal in it is not about regimes at all, it is
-about the **representation** the backbone hands to the head.
+The short version is in §0. Sections 1-9 are the original measurement and reasoning, kept
+because Phase 7 was designed against them and its results should be readable against them.
 
-Sections 1-3 are the measurement. Sections 4-8 are the requirements and the honest
-limits.
+---
+
+## 0. Outcome: the plan changed, and this is what replaced it
+
+The original plan was a **Qwen-internal MoE**: sparse expert FFN layers added to
+`Qwen3-1.7B-Base`, with a load-balancing loss and capacity factors, because Phase 6 measured
+that Qwen's frozen readout is nearly rank-2 (participation ratio 2.1 of 2,048 dimensions,
+§3). The reasoning was that the shared trunk needed more capacity.
+
+**That architecture was not built.** Phase 6's own numbers said the experts were already
+winning every regime: persistence in low-ramp periods, the GBM in both demand terciles, the
+TCN at high ramp and at the longer horizons, and Qwen in *none* of them (§1). Building
+experts inside a backbone that wins no regime, whose readout is rank-2, would have added
+capacity where the measurements said the problem was elsewhere.
+
+Phase 7 instead implemented a **heterogeneous Energy Expert Router** over the three models
+that demonstrably work:
+
+| | Planned (superseded) | Built |
+|---|---|---|
+| Experts | Sparse FFN layers inside Qwen3-1.7B | Persistence, Phase 4's HistGBM, Phase 5's TCN |
+| Gate | Load-balancing loss over internal experts | Softmax over heterogeneous model forecasts |
+| Shared trunk | Qwen's 1.72 B-parameter residual stream | A 1,097-parameter MLP |
+| Motivation | The trunk's rank-2 readout | The best expert changes with horizon and regime |
+| Result | not run | **PARTIALLY** - beats the best single expert at 2 of 3 horizons, a fixed weighted ensemble at **0 of 3** |
+
+The full design, the leakage protections, and the measured result are in
+`docs/expert_router_design.md`. Recorded in `decisions.md` D-091 and D-092.
+
+**What carried over unchanged.** Every requirement in §6 that could apply still does, and
+§9's minimum bar was the checklist the implementation was held to:
+
+| §9 requirement | How Phase 7 met it |
+|---|---|
+| Gate inputs all observable at the origin | 24 columns in six named groups; a poisoning test over whole series histories rebuilds them from corrupted data and requires bit-identical output |
+| No future-derived feature | The regime terciles of §1 are used **only** as diagnostics; `past_error` lags by exactly `h + 1` steps, hand-checked in a test |
+| Leakage test automated, covering the gate's inputs | `assert_router_features_are_causal`, plus a test that injects a leaking builder and asserts the guard fires |
+| Control on the same rows in the same run | Uniform, best-single, fixed-weight and oracle baselines, all built from one cached forecast block |
+| Per-regime error against the best single model | Reported per regime; the router wins one of six and is **9.4x worse** than persistence in the low-ramp tercile |
+| Budget stated in Phase 7's units | Router is 0.11% of expert inference and ~475,000x cheaper per row than Phase 6's frozen backbone. Compute was never the constraint |
+| Fallback acceptable | **Taken, and it is the result.** The fixed weighted ensemble is recorded as the better architecture at every horizon |
+
+The one requirement that became moot is §6.3, "evidence that the shared backbone is not the
+bottleneck" - there is no shared backbone.
 
 ---
 
@@ -43,6 +84,17 @@ The Phase 5 conclusions hold and are now measured twice:
 That last row matters for Phase 7 planning. A router over experts only pays if some
 regime is better served by a specialist. On this evidence, the specialists to route
 *between* are persistence, the GBM and the TCN - not Qwen variants.
+
+**Phase 7 confirmed the diversity premise and refuted the exploitation of it.** On the
+full test split the experts disagree on **59-75% of rows**, their error correlation falls from
+0.90 at 15 minutes to 0.69 at 24 hours, and the oracle gain available over the best single
+expert is **30-38%**. The pool is genuinely complementary.
+
+The router did not exploit it. A fixed weighted ensemble is better at every horizon; the
+router's only regime win is the high-ramp tercile; it assigned persistence a mean weight of
+under 0.001 and is **9.4x worse than persistence in the low-ramp tercile** that §6.7 warned
+about. Capture was -2% to 13% of the available headroom. **The single-model-plus-regime-router
+fallback that §9 listed as acceptable is the outcome.**
 
 ---
 
@@ -211,6 +263,9 @@ alone an MoE forward pass - is out of reach on this machine at the full populati
 
 ## 9. Minimum bar for starting Phase 7
 
+*Superseded - this is the bar Phase 7 was held to, and §0 records how each item was met.
+Kept unchanged so the checklist and its outcome stay together.*
+
 | Criterion | Requirement |
 |---|---|
 | Gate inputs | Every one listed with its availability at the origin; no future-derived feature |
@@ -220,3 +275,13 @@ alone an MoE forward pass - is out of reach on this machine at the full populati
 | Control | TCN and GBM on the same rows in the same run |
 | Budget | Stated in the units of §7 |
 | Fallback | "One model, plus a regime router over persistence/GBM/TCN, is enough" is a recorded, acceptable outcome |
+
+Two items resolved differently than the table anticipates, and both are findings rather
+than omissions. **Gate quality** was measured by the §7 regime tables in
+`docs/expert_router_design.md` §7.7, which show the router beating the best single expert in
+the high-demand tercile (0.8808 against 0.9197 kW) while losing badly in the low-ramp
+tercile (0.0188 against 0.0051 kW) - the trailing-window proxy separates the terciles
+adequately where the error is concentrated and badly where persistence is already exact.
+**Representation check** became moot when the shared trunk was removed; the premise it
+questioned, whether the frozen backbone could carry more dimensional structure, was never
+adopted.

@@ -414,9 +414,16 @@ def test_uncertainty_quantified_requires_a_number() -> None:
         UncertaintyEstimate(kind=UncertaintyKind.MODEL, unit=Unit.KILOWATT)
 
 
-def test_uncertainty_rejects_multiple_simultaneous_summaries() -> None:
-    """How an interval relates to a standard deviation needs Phase 8's assumption."""
-    with pytest.raises(DomainValidationError, match="at most one"):
+def test_uncertainty_rejects_mixing_an_interval_with_a_scalar_summary() -> None:
+    """A paired interval is one quantity, but not one that carries a standard deviation.
+
+    Phase 2 counted the two bounds as separate summaries and refused a prediction interval
+    outright, which made the one representation Phase 8 exists to produce the one the
+    container could not hold. D-099 repaired that: a *pair* is a single quantity. Pairing it
+    with a scalar is still refused, because the relationship depends on the
+    distributional assumption the interval's own method makes.
+    """
+    with pytest.raises(DomainValidationError, match="not both"):
         UncertaintyEstimate(
             kind=UncertaintyKind.MODEL,
             unit=Unit.KILOWATT,
@@ -424,18 +431,49 @@ def test_uncertainty_rejects_multiple_simultaneous_summaries() -> None:
             upper_bound=2.0,
             standard_deviation=0.5,
         )
+    with pytest.raises(DomainValidationError, match="not both"):
+        UncertaintyEstimate(
+            kind=UncertaintyKind.MODEL,
+            unit=Unit.KILOWATT,
+            lower_bound=1.0,
+            upper_bound=2.0,
+            relative_std=0.1,
+        )
+
+
+def test_uncertainty_accepts_a_paired_prediction_interval() -> None:
+    """The repair itself, asserted: an interval is one quantity and is accepted."""
+    estimate = UncertaintyEstimate(
+        kind=UncertaintyKind.COMBINED,
+        unit=Unit.KILOWATT,
+        lower_bound=1.0,
+        upper_bound=2.0,
+        method="conformal_global",
+    )
+    assert estimate.is_quantified
+    assert estimate.is_method_selected
+    assert estimate.lower_bound == 1.0
+    assert estimate.upper_bound == 2.0
+
+
+@pytest.mark.parametrize("field", ["lower_bound", "upper_bound"])
+def test_uncertainty_rejects_half_an_interval(field: str) -> None:
+    """One bound alone is not an interval; it is half a claim."""
+    with pytest.raises(DomainValidationError, match="needs both bounds"):
+        UncertaintyEstimate(
+            kind=UncertaintyKind.PARAMETRIC, unit=Unit.KILOWATT, **{field: 1.0}
+        )
 
 
 @pytest.mark.parametrize(
-    "field", ["lower_bound", "upper_bound", "standard_deviation", "relative_std"]
+    "field", ["standard_deviation", "relative_std"]
 )
-def test_uncertainty_each_summary_is_accepted_alone(field: str) -> None:
-    value = 0.5 if field in ("standard_deviation", "relative_std") else 1.0
+def test_uncertainty_each_scalar_summary_is_accepted_alone(field: str) -> None:
     estimate = UncertaintyEstimate(
-        kind=UncertaintyKind.PARAMETRIC, unit=Unit.KILOWATT, **{field: value}
+        kind=UncertaintyKind.PARAMETRIC, unit=Unit.KILOWATT, **{field: 0.5}
     )
     assert estimate.is_quantified
-    # The method is still TBD until Phase 8 selects one, independent of whether
+    # The method is still TBD until a method is selected, independent of whether
     # a number has been attached.
     assert not estimate.is_method_selected
 

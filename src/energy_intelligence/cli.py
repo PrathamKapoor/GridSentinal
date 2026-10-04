@@ -278,6 +278,61 @@ def build_parser() -> argparse.ArgumentParser:
         "experiments", help="Print the Phase 6 experiment records."
     )
 
+    router_parser = subparsers.add_parser(
+        "router",
+        help="Phase 7: heterogeneous energy expert router (MoE).",
+    )
+    router_parser.add_argument(
+        "--router-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Router experiment config. Defaults to configs/router.toml.",
+    )
+    router_subparsers = router_parser.add_subparsers(dest="router_command", required=True)
+    router_subparsers.add_parser(
+        "config", help="Print the resolved router experiment configuration."
+    )
+    router_subparsers.add_parser(
+        "experts",
+        help="Rebuild the expert pool and cache full-split forecasts (the slow step).",
+    )
+    router_subparsers.add_parser(
+        "run",
+        help="Diversity, oracle, router training, ablations and one sealed evaluation.",
+    )
+    router_subparsers.add_parser(
+        "experiments", help="Print the Phase 7 registry records."
+    )
+
+    uncertainty_parser = subparsers.add_parser(
+        "uncertainty",
+        help="Phase 8: calibrated predictive uncertainty and prediction intervals.",
+    )
+    uncertainty_parser.add_argument(
+        "--uncertainty-config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Uncertainty experiment config. Defaults to configs/uncertainty.toml.",
+    )
+    uncertainty_subparsers = uncertainty_parser.add_subparsers(
+        dest="uncertainty_command", required=True
+    )
+    uncertainty_subparsers.add_parser(
+        "config", help="Print the resolved uncertainty experiment configuration."
+    )
+    uncertainty_subparsers.add_parser(
+        "run",
+        help=(
+            "Fit six interval methods on the calibration split and evaluate once on the "
+            "sealed test split."
+        ),
+    )
+    uncertainty_subparsers.add_parser(
+        "experiments", help="Print the Phase 8 registry records."
+    )
+
     subparsers.add_parser("init-dirs", help="Create the standard directory layout.")
     subparsers.add_parser("paths", help="Print the standard directory layout.")
 
@@ -751,6 +806,437 @@ def _command_qwen(args: argparse.Namespace) -> int:
     return completed.returncode
 
 
+def _script_path(name: str) -> Path | None:
+    """Locate a driver script under ``scripts/``.
+
+    Two candidate roots, because neither works alone. The package's own location is right
+    when running from a source checkout (``src/energy_intelligence/cli.py`` -> repo root) and
+    wrong when running from an installed console script inside a virtual environment. The
+    working directory is right in the second case and in neither when the process was
+    launched from elsewhere. Both are checked, and a missing script is reported rather than
+    guessed at.
+    """
+    candidates = [
+        Path(__file__).resolve().parents[3] / "scripts" / name,
+        Path.cwd() / "scripts" / name,
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _command_router(args: argparse.Namespace) -> int:
+    """Phase 7: heterogeneous energy expert routing.
+
+    Sub-commands
+    ------------
+    ``config``      resolved experiment configuration
+    ``experts``    refit persistence/GBM/TCN and cache full-split forecasts
+    ``run``        diversity, oracle, router, ablations, one sealed test evaluation
+    ``experiments`` the recorded Phase 7 results
+
+    ``experts`` is separated from ``run`` because it is the expensive step - a GBM fit on
+    950,400 training rows plus a 74k-parameter temporal model over 359,040 rows - and
+    every later question in the phase reads the same cached forecasts. Separating them
+    also means the router can be re-trained without re-running the experts, which is
+    what makes the ablations affordable.
+
+    ``run`` never downloads anything and never reads the test split until its final
+    evaluation.
+    """
+    import subprocess
+    import sys as _sys
+
+    from .config.router import load_router_config
+
+    config = load_router_config(args.router_config)
+    paths = ProjectPaths.from_root()
+
+    if args.router_command == "config":
+        print(json.dumps(config.to_dict(), indent=2, sort_keys=True))
+        return _EXIT_OK
+
+    if args.router_command == "experiments":
+        summary = paths.artifacts / "phase7" / config.label / "summary.md"
+        if not summary.is_file():
+            print("no Phase 7 experiment recorded yet", file=sys.stderr)
+            return _EXIT_FAILED
+        print(summary.read_text(encoding="utf-8"))
+        return _EXIT_OK
+
+    if args.router_command == "experts":
+        script = _script_path("phase7_experts.py")
+        if script is None:
+            print(
+                "expert driver scripts/phase7_experts.py not found; run it from the "
+                "project root",
+                file=sys.stderr,
+            )
+            return _EXIT_FAILED
+        completed = subprocess.run([_sys.executable, str(script)], cwd=Path.cwd())
+        return completed.returncode
+
+    return _command_router_run(config, paths)
+
+
+def _command_router_run(config, paths: ProjectPaths) -> int:
+    """Run the Phase 7 experiment over the cached expert forecasts."""
+    import torch
+
+    from .data.smartds import SmartDsLayout
+    from .ml.config_ml_bridge import dataset_config_from
+    from .ml.phase5 import load_series_for_experiment
+    from .ml.router.cache import load_expert_cache
+    from .ml.router.offline.experiment import run_phase7
+    from .ml.registry import ExperimentRecord, append_record, now_iso
+
+    torch.set_num_threads(config.torch_threads)
+    root = paths.root
+    cache_path = root / config.expert_cache
+    if not cache_path.is_file():
+        print(
+            f"expert cache not found at {cache_path}; run "
+            f"`energy-intel router experts` first",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+
+    data = dataset_config_from()
+    layout = SmartDsLayout(
+        data.raw_root, data.version, data.year, data.region,
+        data.subregion, data.scenario, data.substation, data.feeder,
+    )
+    series = load_series_for_experiment(layout, config.temporal_experiment_config())
+    cache = load_expert_cache(cache_path)
+    panel = cache.panel()
+    artifact_dir = paths.artifacts / "phase7" / config.label
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    def log(message: str) -> None:
+        print(message, flush=True)
+        with (artifact_dir / "run.log").open("a", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+
+    log(f"Phase 7: cache {cache.describe()}")
+    result = run_phase7(
+        cache=cache,
+        panel=panel,
+        values=series.normalised().astype("float32"),
+        expert_seconds=cache.metadata.get("expert_timings_seconds"),
+        artifact_dir=artifact_dir,
+        config=config.training_config(),
+        architecture=config.router_architecture(),
+        experiment_id=f"phase7-{config.label}",
+        dataset_version=str(cache.metadata.get("index_version", "")),
+        seed=config.seed,
+        expert_parameters=_expert_parameters(cache),
+        series_ids=series.series_ids,
+        origin_iso=series.origin,
+        published_test_mae=config.published_test_mae,
+        run_ablations_too=config.run_ablations,
+        run_crossfit=config.run_crossfit,
+        ablation_epochs=config.ablation_epochs,
+        trace_rows=config.trace_rows,
+        log=log,
+    )
+
+    record = ExperimentRecord(
+        experiment_id=result.experiment_id,
+        created_at=now_iso(),
+        target_id=config.target,
+        dataset_version=result.dataset_version,
+        dataset_sha256=str(cache.metadata.get("index_version", "")),
+        feature_names=list(result.router.get("router_features", [])),
+        lookback_steps=config.lookback_steps,
+        horizon_steps=max(config.horizons),
+        split_fractions={"train": config.train_fraction, "validation": config.validation_fraction},
+        split_counts={
+            "validation_router_fit": result.router.get("train_rows"),
+            "validation_router_select": result.router.get("validation_rows"),
+            "test": int(cache.split_bounds[cache.split_names.index("test")][1])
+            - int(cache.split_bounds[cache.split_names.index("test")][0]),
+        },
+        model="phase7_energy_router",
+        model_family="mixture_of_experts",
+        hyperparameters={
+            "experts": list(cache.expert_names),
+            "router": result.router.get("architecture"),
+            "router_parameters": result.router.get("parameters"),
+            "router_features": result.router.get("router_features"),
+            "training": result.router.get("history") and config.training_config().to_dict(),
+            "oracle_gain_available_pct": result.verdict.get("mean_oracle_gain_available_pct"),
+        },
+        seed=config.seed,
+        train_seconds=float(result.cost["router_train_seconds"]),
+        predict_seconds=float(result.cost["router_inference_seconds"]),
+        metrics={
+            horizon: {
+                "mae": result.methods["router_soft"][horizon]["mae"],
+                "rmse": result.methods["router_soft"][horizon]["rmse"],
+                "n": result.methods["router_soft"][horizon]["n"],
+                "unit": "kW",
+                "storage": "kW, the row's rated kW applied to a per-unit forecast",
+                "vs_best_single_pct": result.verdict["per_horizon"][horizon][
+                    "router_vs_best_single_pct"
+                ],
+                "selection_accuracy": result.routing["router_soft"][horizon][
+                    "selection_accuracy"
+                ],
+                "routing_regret_kw": result.routing["router_soft"][horizon][
+                    "routing_regret_kw"
+                ],
+            }
+            for horizon in result.verdict["per_horizon"]
+        },
+        artifacts=result.artifacts,
+        environment=_environment(torch),
+        notes=list(result.notes) + [f"verdict: {result.verdict['answer']}"],
+    )
+    registry_path = paths.experiments / "registry.jsonl"
+    append_record(registry_path, record)
+    log(f"verdict: {result.verdict['answer']}")
+    log(f"recorded {record.experiment_id} in {registry_path}")
+    return _EXIT_OK
+
+
+def _command_uncertainty(args: argparse.Namespace) -> int:
+    """Phase 8: calibrated predictive uncertainty.
+
+    Sub-commands
+    ------------
+    ``config``      resolved experiment configuration
+    ``run``        fit six interval methods, evaluate once on the sealed test split
+    ``experiments`` the recorded Phase 8 results
+
+    ``run`` reads Phase 7's cached expert forecasts and reuses Phase 7's fitted
+    fixed-ensemble weights. It fits no point-forecast model of its own and downloads
+    nothing, so the only thing that varies between its methods is the interval.
+
+    The sealed test split is read once, at the final evaluation, and nothing in the run
+    adjusts to what is found there.
+    """
+    from .config.uncertainty import load_uncertainty_config
+
+    config = load_uncertainty_config(args.uncertainty_config)
+    paths = ProjectPaths.from_root()
+
+    if args.uncertainty_command == "config":
+        print(json.dumps(config.to_dict(), indent=2, sort_keys=True))
+        return _EXIT_OK
+
+    if args.uncertainty_command == "experiments":
+        summary = paths.artifacts / "phase8" / config.label / "summary.md"
+        if not summary.is_file():
+            print("no Phase 8 experiment recorded yet", file=sys.stderr)
+            return _EXIT_FAILED
+        print(summary.read_text(encoding="utf-8"))
+        return _EXIT_OK
+
+    return _command_uncertainty_run(config, paths)
+
+
+def _command_uncertainty_run(config, paths: ProjectPaths) -> int:
+    """Run the Phase 8 experiment over Phase 7's cached expert forecasts.
+
+    Args:
+        config: The resolved :class:`UncertaintyExperimentConfig`.
+        paths: The project's standard directory layout.
+
+    Returns:
+        ``0`` on success, ``1`` when an input is missing.
+    """
+    import torch
+
+    from .data.smartds import SmartDsLayout
+    from .ml.config_ml_bridge import dataset_config_from
+    from .ml.phase5 import load_series_for_experiment
+    from .ml.registry import ExperimentRecord, append_record, now_iso
+    from .ml.router.cache import load_expert_cache
+    from .ml.uncertainty.offline.experiment import run_phase8
+
+    torch.set_num_threads(config.torch_threads)
+    root = paths.root
+    cache_path = root / config.expert_cache
+    if not cache_path.is_file():
+        print(
+            f"expert cache not found at {cache_path}; run "
+            f"`energy-intel router experts` first - Phase 8 reuses Phase 7's forecasts "
+            f"rather than refitting them",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+    phase7_path = root / config.phase7_result
+    if not phase7_path.is_file():
+        print(
+            f"Phase 7 result not found at {phase7_path}; Phase 8 reads the fixed-ensemble "
+            f"weights from it so the point forecast cannot drift",
+            file=sys.stderr,
+        )
+        return _EXIT_FAILED
+
+    data = dataset_config_from()
+    layout = SmartDsLayout(
+        data.raw_root, data.version, data.year, data.region,
+        data.subregion, data.scenario, data.substation, data.feeder,
+    )
+    series = load_series_for_experiment(layout, config.temporal_experiment_config())
+    cache = load_expert_cache(cache_path)
+    panel = cache.panel()
+    artifact_dir = paths.artifacts / "phase8" / config.label
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    def log(message: str) -> None:
+        print(message, flush=True)
+        with (artifact_dir / "run.log").open("a", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+
+    published = dict(config.published_test_mae or {})
+    if "fixed_ensemble" not in published:
+        # Phase 7's own fixed-ensemble MAE, read from its result rather than copied into
+        # this config: it is the number the parity check is most likely to catch a refit
+        # with, and a second hand-typed copy is a second thing to forget to update.
+        import json as _json
+
+        phase7 = _json.loads(phase7_path.read_text(encoding="utf-8"))
+        table = (phase7.get("methods") or {}).get("fixed_ensemble") or {}
+        published["fixed_ensemble"] = {
+            str(horizon): float(entry["mae"]) for horizon, entry in table.items()
+        }
+
+    log(f"Phase 8: cache {cache.describe()}")
+    result = run_phase8(
+        cache=cache,
+        panel=panel,
+        values=series.normalised().astype("float32"),
+        artifact_dir=artifact_dir,
+        config=config,
+        experiment_id=f"phase8-{config.label}",
+        dataset_version=str(cache.metadata.get("index_version", "")),
+        seed=config.seed,
+        series_ids=series.series_ids,
+        origin_iso=series.origin,
+        phase7_result_path=phase7_path,
+        published_point_mae=published,
+        nominal_levels=config.nominal_levels,
+        run_ablations=config.run_ablations,
+        log=log,
+    )
+
+    record = ExperimentRecord(
+        experiment_id=result.experiment_id,
+        created_at=now_iso(),
+        target_id=config.target,
+        dataset_version=result.dataset_version,
+        dataset_sha256=str(cache.metadata.get("index_version", "")),
+        feature_names=list(result.features["names"]),
+        lookback_steps=config.lookback_steps,
+        horizon_steps=max(config.horizons),
+        split_fractions={"train": config.train_fraction, "validation": config.validation_fraction},
+        split_counts={
+            "calibration_fit": result.split["calibration_fit_rows"],
+            "calibration_conformity": result.split["calibration_conformity_rows"],
+            "test": int(cache.split_bounds[cache.split_names.index("test")][1])
+            - int(cache.split_bounds[cache.split_names.index("test")][0]),
+        },
+        model="phase8_probabilistic_forecast",
+        model_family="prediction_interval",
+        hyperparameters={
+            "experts": list(cache.expert_names),
+            "fixed_ensemble_weights": result.weights["fixed_ensemble_weights"],
+            "methods": [name for name in result.methods],
+            "nominal_levels": list(config.nominal_levels),
+            "band_nominal_level": config.band_nominal_level,
+            "calibration_fit_fraction": config.calibration_fit_fraction,
+            "include_past_error_features": config.include_past_error_features,
+            "coverage_tolerance": result.verdict["coverage_tolerance"],
+            "calibration_status": result.artifact_summary["calibration_status"],
+            "point_parity_max_pct": result.parity.get("max_relative_difference_pct"),
+        },
+        seed=config.seed,
+        train_seconds=float(result.seconds),
+        predict_seconds=0.0,
+        metrics={
+            str(horizon): {
+                "mae": result.split_parity[str(horizon)]["test_mae_kw"],
+                "n": result.split_parity[str(horizon)]["test_rows"],
+                "unit": "kW",
+                "storage": "kW, the row's rated kW applied to a per-unit forecast",
+                "coverage_at_headline": {
+                    row["method"]: row["coverage"]
+                    for row in result.comparison
+                    if row["horizon"] == int(horizon)
+                },
+                "interval_score_kw": {
+                    row["method"]: row["interval_score_kw"]
+                    for row in result.comparison
+                    if row["horizon"] == int(horizon)
+                },
+                "calibrated_methods": [
+                    row["method"]
+                    for row in result.comparison
+                    if row["horizon"] == int(horizon) and row["passes"]
+                ],
+            }
+            for horizon in config.horizons
+        },
+        artifacts=result.artifacts,
+        environment=_environment(torch),
+        notes=list(result.notes)
+        + [
+            f"verdict: {result.verdict['answer']}",
+            "components: "
+            + ", ".join(
+                f"{name}={component['answer']}"
+                for name, component in result.verdict["components"].items()
+            ),
+        ],
+    )
+    registry_path = paths.experiments / "registry.jsonl"
+    append_record(registry_path, record)
+    log(f"verdict: {result.verdict['answer']}")
+    log(f"recorded {record.experiment_id} in {registry_path}")
+    return _EXIT_OK
+
+
+def _expert_parameters(cache) -> dict[str, int]:
+    """Per-expert size, from the builder's own provenance record.
+
+    The three experts do not have a comparable notion of "parameters": the TCN has a
+    weight tensor, the GBM has tree nodes and persistence has none at all. Each number is
+    therefore labelled by what it counts, in the cost table's ``note``, rather than summed
+    into one figure that would mean nothing.
+    """
+    provenance = cache.metadata.get("experts", {}) or {}
+    out: dict[str, int] = {}
+    for name in cache.expert_names:
+        entry = provenance.get(name, {}) or {}
+        for key in ("parameters", "tree_nodes"):
+            value = entry.get(key)
+            if value:
+                out[name] = int(value)
+                break
+    return out
+
+
+def _environment(torch_module) -> dict[str, str]:
+    import platform
+    import sys
+
+    import numpy
+    import sklearn
+
+    return {
+        "python": platform.python_version(),
+        "platform": sys.platform,
+        "machine": platform.machine(),
+        "cpu": platform.processor(),
+        "numpy": numpy.__version__,
+        "sklearn": sklearn.__version__,
+        "torch": torch_module.__version__,
+    }
+
+
 def _command_init_dirs() -> int:
     created = ProjectPaths.from_root().ensure()
     if created:
@@ -806,6 +1292,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _command_temporal(args)
             case "qwen":
                 return _command_qwen(args)
+            case "router":
+                return _command_router(args)
+            case "uncertainty":
+                return _command_uncertainty(args)
             case "init-dirs":
                 return _command_init_dirs()
             case "paths":

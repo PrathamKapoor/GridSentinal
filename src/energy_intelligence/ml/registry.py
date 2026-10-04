@@ -28,7 +28,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-__all__ = ["ExperimentRecord", "REGISTRY_FILENAME", "append_record", "read_records", "environment"]
+__all__ = [
+    "ExperimentRecord",
+    "REGISTRY_FILENAME",
+    "append_record",
+    "read_records",
+    "environment",
+    "now_iso",
+]
 
 REGISTRY_FILENAME = "registry.jsonl"
 
@@ -85,6 +92,9 @@ class ExperimentRecord:
         payload = asdict(self)
         payload["feature_names"] = list(self.feature_names)
         payload["notes"] = list(self.notes)
+        payload["artifacts"] = {
+            name: _project_relative(path) for name, path in self.artifacts.items()
+        }
         return payload
 
     def to_json(self) -> str:
@@ -96,6 +106,32 @@ class ExperimentRecord:
         data["feature_names"] = tuple(data.get("feature_names", ()))
         data["notes"] = tuple(data.get("notes", ()))
         return cls(**data)
+
+
+def _project_relative(path: str) -> str:
+    """Rewrite a path under the project root as a root-relative POSIX path.
+
+    The registry is committed and read on other machines, so an absolute path is worse than
+    useless there: it records the author's directory layout, it does not resolve, and it
+    makes the file look machine-specific when the only machine-specific thing about it is
+    the prefix. Paths outside the project root are left alone rather than mangled - an
+    absolute path there is genuinely the only correct description.
+
+    Args:
+        path: The recorded path, absolute or already relative.
+
+    Returns:
+        The path relative to the project root when it lies inside it, else unchanged.
+    """
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        return path
+    try:
+        from ..config.loader import PROJECT_ROOT
+
+        return candidate.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except (ImportError, ValueError):
+        return path
 
 
 def environment() -> dict[str, str]:

@@ -1147,7 +1147,7 @@ These numbers, not preference, chose a frozen backbone (D-084) and fp32 (D-085).
 
 | Module | Responsibility |
 |---|---|
-| `ml/qwen/checkpoint.py` | Pinned identity, verification against the real files, architecture invariants for Phase 7 |
+| `ml/qwen/checkpoint.py` | Pinned identity, verification against the real files, architecture invariants (never used for surgery - see Phase 7) |
 | `ml/qwen/representation.py` | The numeric bridge: patches, the fixed projector, per-layer feature extraction |
 | `ml/qwen/features.py` | Deterministic per-series subsample, and the on-disk feature cache |
 | `ml/qwen/probe.py` | `FeatureBasis` (train-only PCA), `ProbeHead`, `fit_probe`, `probe_predict` |
@@ -1193,13 +1193,339 @@ the head is nearly rank-2.
 ```text
 energy-intel qwen config       resolved experiment configuration
 energy-intel qwen verify       checkpoint verification against the pinned facts
-energy-intel qwen inspect      architecture report and the Phase 7 surgery sites
+energy-intel qwen inspect      architecture report and the available surgery sites
 energy-intel qwen probe        probe experiments over cached features
 energy-intel qwen experiments  the recorded Phase 6 results
 ```
 
 `verify` and `inspect` need only the checkpoint; `probe` needs the cached features
 produced by `scripts/phase6_extract.py` and never downloads anything itself.
+
+## 12. Phase 7: heterogeneous energy expert router
+
+### 12.1 What it adds
+
+Phase 7 asks whether a **learned routing mechanism** can pick or combine forecasting experts
+according to the current demand state and beat the strongest single expert. The plan to do
+this inside Qwen3-1.7B was dropped after Phase 6 measured that Qwen wins no regime and its
+frozen readout has a participation ratio of 2.1 of 2,048 dimensions. See `decisions.md`
+D-091 and `docs/expert_router_design.md`.
+
+```text
+Phase 4 (flat lag features)        Phase 5 (ordered windows)
+  HistGBM, 950,400 training rows     dilated causal TCN, 74,099 params
+        \                                  /
+         \                                /
+          ----  Phase 7  ----
+   heterogeneous expert pool
+     persistence          0 params
+     classical_hist_gbm   36,600 tree nodes
+     phase5_tcn           74,099 weights
+        |
+   router: 24 origin-observable features
+     -> Linear(24, 32) + ReLU
+     -> Linear(32, 3 experts x 3 horizons)
+     -> softmax over experts, per horizon
+     1,097 parameters
+```
+
+### 12.2 Two commands, because the costs differ by 30x
+
+```text
+energy-intel router experts   _script_path("phase7_experts.py") -> subprocess
+                              build_panel()            experts.py
+                              build_experts()          experts.py   ~5 min
+                              pool.forecast_block()    experts.py
+                              -> artifacts/phase7/experts.npz
+
+energy-intel router run       _command_router_run()    cli.py
+                              load_expert_cache()      cache.py
+                              run_phase7()             offline/experiment.py
+                              -> artifacts/phase7/<label>/result.json
+                              -> experiments/registry.jsonl
+```
+
+`router experts` is separated because it is the expensive step - a HistGBM fit on 950,400
+training rows plus a 74k-parameter temporal model over 359,040 rows - and because every
+later question in the phase must read the *same* cached forecasts. Without that separation,
+"the router beat the GBM" could mean "they were scored on different rows", and there would be
+no way to tell from a table.
+
+### 12.3 The panel, and why it is Phase 5's rows
+
+```text
+data/raw/smart_ds -> SmartDsAdapter -> load_target()        ml/targets.py
+                  -> series.normalised()                    per unit of rated kW
+   build_sequence_index(train_origin_stride=1)              ml/sequence.py
+   950,400 train / 179,520 validation / 179,520 test
+                  -> build_panel()                           experts.py
+   concatenates validation then test, numbering them 0..N-1
+                  -> cached with the forecasts              cache.py
+```
+
+`build_panel` is the single canonical ordering. Expert forecasts, router features, targets
+and oracle labels all index those positions, so nothing downstream has to agree on how to
+slice two different row arrays. The panel is ordered origin-major and series-minor, which is
+what makes the lagged-error neighbour findable by binary search; `append_lagged_error_features`
+raises rather than guessing if it is not.
+
+### 12.4 Building the experts
+
+```text
+build_experts()                                   experts.py
+  GBM, Phase 4's model reproduced exactly:
+    build_feature_matrix(PHASE4_FEATURE_NAMES)   13 columns, Phase 4's order
+    FeatureScaler.fit(train rows only)           ml/scaling.py
+    + series_index, series_level, series_volatility
+      fitted on training rows only               _phase4_series_context()
+    fit_classical("classical_hist_gbm")          ml/baselines/classical.py
+      one estimator per horizon, on PER-UNIT targets
+  TCN, Phase 5's real checkpoint:
+    torch.load(artifacts/phase5/tcn-main/checkpoint.pt)
+    build_model("tcn", params=payload["config"])
+    _window_scaler(values, index, index.rows(0)) ml/phase5.py
+```
+
+Two unit traps, both caught and both now enforced by an interface test. Phase 4 fits on
+**per-unit** targets, so the GBM's estimate is per-unit and `GbmExpert` scales by rated kW.
+Phase 5's `predict_series` returns **per-unit** levels, so `TcnExpert` scales by rated kW.
+Every expert returns kW; `forecast_block` refuses a non-finite or mis-shaped forecast.
+
+### 12.5 Router features, and the leakage guard
+
+```text
+build_router_features()                features.py
+  level       y(t) per-unit and kW
+  trajectory  trailing means over 4 and 24 steps, last ramp
+  volatility  rolling std over 96 steps
+  calendar    sin/cos hour-of-day and day-of-year, weekend
+  scale       log rated kW
+append_lagged_error_features()         features.py
+  past_error  |f_e(t-h-1; h) - y(t-1)| / rated_kw   per expert per horizon
+  past_seen   flag: was a predecessor reachable?
+assert_router_features_are_causal()   features.py
+  poison every value after a row's own origin in its series
+  rebuild every row of that series up to that origin
+  require bit-identical features
+fill_missing(router_train_rows)        features.py
+  NaN -> column mean over the router's own training rows only
+```
+
+The regime terciles are **not** inputs. They are computed from the demand being predicted,
+so a router using them would be reading the target. They are used in
+`offline/evaluation.py::router_by_regime` for the analysis and nowhere else.
+
+### 12.6 Two training variants, chosen per horizon on validation
+
+```text
+fixed_ensemble, warm start          ensembles.py / offline/experiment.py
+  fit_fixed_weights(router-train rows)   5,151-point simplex grid, chunked
+fit_router(initial_weights=fixed)  training.py
+  head bias = log(w), head weights = 0   so epoch 0 IS the fixed ensemble
+  epoch 0 scored and eligible for selection
+fit_router(initial_weights=None)   training.py     the cold variant
+select per horizon on the selection rows           offline/experiment.py
+```
+
+### 12.7 The evaluation, in the order of the argument
+
+```text
+1  diversity        offline/diversity.py    correlations, agreement, per-regime splits
+2  oracle           offline/oracle.py       per-row best expert with hindsight
+3  router features  features.py             built, causality-checked, imputed
+4  baselines        ensembles.py            uniform, best-single, fixed-weight
+5  router           training.py             warm and cold variants
+6  routing quality  offline/evaluation.py   regret, selection accuracy, capture ratio
+                   offline/evaluation.py   stability, calibration, failure analysis
+7  cost             offline/evaluation.py   parameters, seconds, per-row overhead
+8  ablations        offline/ablations.py    four feature/head contracts
+                   offline/crossfit.py      in-sample vs out-of-sample labels
+9  parity           offline/experiment.py   Phase 7 experts vs Phase 4/5 published
+10 verdict, trace, artifacts, registry
+```
+
+Steps 1 and 2 come **before** any router exists, because the honest question is whether the
+premise holds. If the experts made the same mistakes, or the oracle barely beat the best
+single expert, no router was going to help.
+
+### 12.8 Modules
+
+| Module | Responsibility |
+|---|---|
+| `ml/router/experts.py` | The panel, the three experts, the pool, Phase 4's feature contract |
+| `ml/router/features.py` | The 24 origin-observable columns, the lagged-error lookup, the poisoning guard |
+| `ml/router/model.py` | `EnergyRouterNet`, per-horizon simplex heads, the warm start |
+| `ml/router/routing.py` | `mix`, `hard_selection`, `RoutingDecision`, the deployable `EnergyRouter` |
+| `ml/router/training.py` | `fit_router`, `load_router`, epoch-0 eligibility, the checkpoint |
+| `ml/router/ensembles.py` | Uniform, best-single and simplex-searched fixed weights |
+| `ml/router/cache.py` | The single on-disk forecast block every number is read from |
+| `ml/router/offline/oracle.py` | The upper bound. Not importable from the deployable side |
+| `ml/router/offline/diversity.py` | Error correlations, agreement, per-regime expert preference |
+| `ml/router/offline/evaluation.py` | Metrics, regret, stability, calibration, per-regime routing, cost |
+| `ml/router/offline/crossfit.py` | How much in-sample expert accuracy would have distorted the labels |
+| `ml/router/offline/ablations.py` | Four ablations and their stated questions |
+| `ml/router/offline/experiment.py` | The runner, the verdict, the trace, the summary |
+| `config/router.py` | Strict config; refuses a redefined task |
+| `scripts/phase7_experts.py` | The expensive expert pass |
+
+### 12.9 Entry points
+
+```text
+energy-intel router config        resolved experiment configuration
+energy-intel router experts       refit the pool and cache forecasts (the slow step)
+energy-intel router run           diversity, oracle, router, ablations, sealed evaluation
+energy-intel router experiments   the recorded result
+```
+
+`experts` shells out to `scripts/phase7_experts.py`; `run` never downloads anything and never
+reads the test split until its final evaluation.
+
+### 12.10 Result
+
+kW MAE on the sealed test split, 179,520 rows, every method scored on the same rows:
+
+| method | h=1 | h=4 | h=96 |
+|---|---|---|---|
+| persistence | **0.4043** | 0.8897 | 2.4343 |
+| classical GBM | 0.4242 | 0.8576 | 1.5737 |
+| Phase 5 TCN | 0.4178 | 0.8307 | 1.6510 |
+| uniform ensemble | 0.3955 | 0.7943 | 1.7615 |
+| fixed ensemble | **0.3983** | **0.7917** | **1.5399** |
+| router (soft) | 0.4069 | 0.7917 | 1.5600 |
+| router (hard) | 0.4150 | 0.8307 | 1.5709 |
+| oracle expert assignment | 0.2871 | 0.5217 | 0.9942 |
+
+**Verdict: PARTIALLY, and the negative half is the important half.** Versus the best single
+expert, 2 of 3 horizons - it *loses* at 15 minutes. Versus a fixed weighted ensemble,
+**0 of 3**. The oracle shows 30-38% of achievable gain is present in the pool and the
+experts disagree on 59-75% of rows, so the diversity premise holds; the router captured
+-2% to 13% of it. Warm-started from the state-independent optimum it selected **epoch 0 at
+every horizon**: gradient descent found no state-dependent weighting that beat a constant
+one. It selected persistence 13 times in 179,520 rows and is 9.4x worse than it in the
+low-ramp tercile.
+
+## 13. Phase 8: calibrated predictive uncertainty
+
+### 13.1 What it adds
+
+Phase 7 left the point forecast alone and answered a negative question about routing. Phase 8
+leaves the point forecast alone again and answers a different one: **how uncertain is it,
+and does saying so identify the forecasts that will be wrong?**
+
+The forecast is not refitted. Phase 7's fitted fixed-ensemble weights are read from its own
+`result.json`, checked against `configs/uncertainty.toml`, and **the run stops if they
+disagree** — because an uncertainty result around a different point forecast is not a Phase 8
+result. The recovered ensemble reproduces Phase 7's published test MAE to **0.0000%**.
+
+### 13.2 The partition
+
+```text
+TRAIN          Phase 4/5 split. 950,400 rows. The experts were fitted here.
+                      |
+VALIDATION     Phase 5/7 split. 179,520 rows. Expert predictions are out-of-sample.
+    +-- CAL_FIT      first 50%, 89,760 rows. Scale functions, pinball models.
+    +-- CAL_CONF     last  50%, 89,760 rows. Conformity scores, band cut points.
+                      |
+TEST           Phase 5/7 split. 179,520 rows. Read once, at the end.
+```
+
+Validation is halved rather than reusing Phase 7's own 70/30 router split, because the scale
+model must not be fitted on rows the ensemble's weights were fitted on. The overlap that
+remains is **measured** rather than assumed — `split_parity_check` reports the point
+forecast's MAE on all three row sets, and on this data the two validation halves differ by
+**+8.6% at h=1 and -11.0% at h=96**.
+
+### 13.3 One idea, six methods
+
+Every symmetric method is `point ± multiplier × scale(row)`. The families differ only in
+where `multiplier` comes from; the **scale** decides whether the width may vary by row.
+
+| Method | `multiplier` from | `scale` |
+|---|---|---|
+| `global_residual` | empirical quantile of \|residual\| on CAL_CONF | constant |
+| `conformal_global` | `ceil((n+1)(1-α))`-th smallest \|residual\| | constant |
+| `state_residual` | empirical quantile of \|residual\|/scale on CAL_CONF | learned |
+| `conformal_state` | conformal quantile of \|residual\|/scale | learned |
+| `conformal_dispersion` | conformal quantile of \|residual\|/spread | expert spread |
+| `quantile_regression` | pinball-loss model of the residual quantiles | asymmetric |
+
+`global_residual` is the baseline every other must beat, and the same method is applied to
+each individual expert so the answer does not depend on which predictor is in use.
+
+The learned scale fits `E[|residual| | x]` with an **L1** objective — the conditional
+*median*, because the absolute residual's right tail would otherwise inflate every row's
+width. Its inputs are Phase 7's 24 origin-observable columns, reused rather than rebuilt,
+with the imputation reference changed from the whole panel to `CAL_FIT`. The origin-poisoning
+guard runs on **every** Phase 8 experiment.
+
+### 13.4 What is measured, per method
+
+Four nominal levels (50/80/90/95%) × three horizons on the sealed split: coverage, signed
+coverage error, a PASS/FAIL flag against `max(0.01, 3·SE)`, mean and median width, the
+width/MAE sharpness ratio, the Winkler interval score and the weighted interval score,
+Spearman correlation between width and realised error with the top-decile error multiple,
+reliability by width bin, and the count of confident-and-severely-wrong rows.
+
+The published procedure is chosen **per horizon** at the 90% band level from the measured
+coverage — among calibrated methods, the lowest weighted interval score. On this data:
+`conformal_state` at h=1 and h=4, `conformal_dispersion` at h=96.
+
+### 13.5 Modules
+
+| Module | Responsibility |
+|---|---|
+| `ml/uncertainty/intervals.py` | `PredictionInterval`, symmetric and asymmetric constructors, the zero clip |
+| `ml/uncertainty/scales.py` | `GlobalScale`, `LearnedScale`, `DisagreementScale` |
+| `ml/uncertainty/calibration.py` | `fit_conformal`, the finite-sample index, the conditional guarantee text |
+| `ml/uncertainty/quantile.py` | `fit_quantile_model`, monotone rearrangement, crossing counts |
+| `ml/uncertainty/split.py` | `CalibrationSplit`, the chronological halving, `split_parity_check` |
+| `ml/uncertainty/features_set.py` | The scale's inputs, and the poisoning guard re-run per experiment |
+| `ml/uncertainty/measures.py` | The five spread statistics and `spearman` |
+| `ml/uncertainty/metrics.py` | Coverage, width, interval score, WIS, ECE, sharpness |
+| `ml/uncertainty/evaluation.py` | Ranking, reliability, overconfidence, imminent-ramp detection |
+| `ml/uncertainty/artifact.py` | `ProbabilisticForecast`, the batch, band cuts, save/load, the domain join |
+| `ml/uncertainty/offline/analysis.py` | `evaluate_method`, `method_table`, `regime_breakdown` |
+| `ml/uncertainty/offline/verdict.py` | The three components and the per-horizon selection |
+| `ml/uncertainty/offline/experiment.py` | The runner, the selection, the trace, the summary |
+| `config/uncertainty.py` | Strict config; refuses a redefined task or re-weighted forecast |
+
+### 13.6 Entry points
+
+```text
+energy-intel uncertainty config        resolved experiment configuration
+energy-intel uncertainty run          fit six interval methods, evaluate once on test
+energy-intel uncertainty experiments  the recorded Phase 8 result
+```
+
+`run` reads Phase 7's cached forecasts and its recorded weights, downloads nothing, and never
+reads the test split until its final evaluation.
+
+### 13.7 Result
+
+**Verdict: YES** on all three components, with the most useful finding being negative.
+
+| horizon | published procedure | coverage @90% | error | ρ(width, error) | top decile |
+|---|---|---|---|---|---|
+| h=1 | `conformal_state` | 0.9020 | +0.0020 | +0.709 | 4.61x |
+| h=4 | `conformal_state` | 0.8973 | -0.0027 | +0.673 | 4.21x |
+| h=96 | `conformal_dispersion` | 0.8934 | -0.0066 | +0.658 | 4.80x |
+
+**The default `±1σ` interval fails 11 of 12 coverage cells, in opposite directions at the two
+ends of the range** — 0.9836 at h=1 and 0.9071 at h=96, against a nominal 0.95. The split-parity
+table predicted both signs. A constant width calibrated on one half of validation does not
+transfer to a later period on this data, and no care in choosing the quantile fixes it.
+
+Expert disagreement is positive but weak (ρ = +0.41 / +0.25 / +0.18), decays with horizon,
+and becomes **negative** at h=4 and h=96 once normalised by the forecast level. A learned
+state-conditioned scale is the most informative uncertainty and the most miscalibrated at the
+50% level. Pinball quantile regression degrades with horizon and is published nowhere.
+
+Width tracks error in every regime at every horizon: across the load-level terciles the width
+ratio runs 7.8x / 7.8x / 16.0x against error ratios of 7.5x / 7.5x / 11.2x.
+
+**Not claimed:** no coverage guarantee (the exchangeability assumption is violated, and the
+phase's own numbers show it); no aleatoric/epistemic decomposition; coverage is uniform on
+average, not conditional on regime; no decision rule.
 
 ## 9. Entry points
 
@@ -1210,7 +1536,12 @@ energy-intel ml features     the feature catalogue and the availability policy
 energy-intel ml dataset      build and persist the dataset, no training
 energy-intel ml run          dataset + baselines + analysis + registry
 energy-intel ml experiments  the recorded registry
+energy-intel router config       Phase 7 configuration
+energy-intel router experts      the expensive expert pass
+energy-intel router run          routing, ablations, sealed evaluation
+energy-intel uncertainty config  Phase 8 configuration
+energy-intel uncertainty run     six interval methods, one sealed evaluation
 ```
 
-All are invoked as `energy-intel ml --ml-config <path> <subcommand>`, because the
+All are invoked as `energy-intel <group> --<group>-config <path> <subcommand>`, because the
 config selects the subcommand's experiment before the subcommand runs.

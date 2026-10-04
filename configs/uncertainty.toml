@@ -1,0 +1,106 @@
+# Phase 8 experiment: calibrated predictive uncertainty around Phase 7's forecast.
+#
+# The point forecast is NOT decided here. Phase 8 reuses Phase 7's fixed ensemble with
+# Phase 7's fitted weights, and the table at the bottom of this file is a copy that the
+# loader checks against those recorded values - and the runner re-checks against Phase 7's
+# own artifact before it fits anything. If the two ever disagree the run stops, because an
+# "uncertainty result" around a different point forecast is not a Phase 8 result.
+#
+# The task definition is inherited from Phase 7 for the same reason Phase 7 inherited it
+# from Phase 5: same target, same 40 customers, same seed, same horizons, same window,
+# same split fractions, so the rows evaluated here are the rows evaluated there.
+#
+# NOTE ON TOML ORDER: every bare key after a table header belongs to that table, so
+# [fixed_ensemble_weights] is last and every scalar precedes it.
+#
+# Unknown keys are REJECTED (D-007).
+
+# ---------------------------------------------------------------------------
+# Task (inherited from Phase 7; validated, not trusted)
+# ---------------------------------------------------------------------------
+target = "customer_load"
+label = "uncertainty-main"
+customer_count = 40
+seed = 20260101
+torch_threads = 8
+
+horizons = [1, 4, 96]
+
+train_fraction = 0.70
+validation_fraction = 0.15
+
+# Same window as Phase 5 and Phase 7, so the panel is the same rows. The uncertainty
+# estimators read trailing summaries of this window and never the window itself.
+lookback_steps = 672
+token_stride = 4
+
+# ---------------------------------------------------------------------------
+# Calibration design
+# ---------------------------------------------------------------------------
+# The validation split is halved chronologically: this fraction fits the width scale
+# functions, the remainder supplies the conformity scores. They must be disjoint, because a
+# scale fitted on the very residuals it is asked to normalise is not a scale.
+#
+# Phase 7 fitted the fixed ensemble's three weights per horizon on the first 70% of
+# validation, so the halves here are not both free of that fit. The runner reports the
+# point forecast's MAE on both halves and on test, so the size of that overlap is a number
+# in the result rather than an assumption.
+calibration_fit_fraction = 0.5
+
+# Whether the learned scale may use each expert's lagged realised error - the strongest
+# single feature group Phase 7 found. Switchable so the phase can report what it is worth
+# rather than assuming it.
+include_past_error_features = true
+
+# Coverage levels to calibrate and report. 50% is an operator's "likely range", 80% the
+# working default, 90% the standard for energy risk and 95% where intervals start to be
+# operationally useless. Sweeping every level would make a large table and no more
+# information: a method calibrated at 50% and 95% has said what it does in between.
+nominal_levels = [0.50, 0.80, 0.90, 0.95]
+
+# The level the published band and the per-horizon calibration status are drawn at. It has
+# to be one of the levels above, because the status is read from the measured coverage at
+# that level rather than asserted.
+band_nominal_level = 0.90
+
+# ---------------------------------------------------------------------------
+# Estimator budget
+# ---------------------------------------------------------------------------
+# Boosting iterations for the learned scale, and per fitted residual quantile for the
+# pinball-loss models. Both fit on CAL_FIT only.
+scale_max_iter = 200
+quantile_max_iter = 200
+
+# Rows verified by the origin-poisoning check, run on every experiment rather than once:
+# the feature matrix is reused from Phase 7's builders, and a reused component's
+# invariants are not automatically preserved.
+causality_sample = 32
+
+reliability_bins = 10
+trace_rows = 2000
+
+# Recorded verbatim on every published forecast, so a consumer can tell which run produced
+# the interval it is holding.
+model_version = "phase8-uncertainty-v1"
+
+run_ablations = true
+
+# ---------------------------------------------------------------------------
+# Inputs
+# ---------------------------------------------------------------------------
+# Phase 7's expert forecasts. Reused, not regenerated: the point forecast must be Phase 7's
+# to the last decimal or the parity check cannot mean anything.
+expert_cache = "artifacts/phase7/experts.npz"
+phase7_result = "artifacts/phase7/router-main/result.json"
+
+# ---------------------------------------------------------------------------
+# The fixed point forecast (Phase 7's fitted weights, verbatim)
+# ---------------------------------------------------------------------------
+# One weight per expert per horizon, rows summing to one. Persistence keeps a 0.16 share at
+# h=1 and none beyond it, which is what Phase 7 measured; the tree and the TCN share the
+# rest. These are not free parameters of Phase 8 - the loader rejects any other values, and
+# the runner rejects any disagreement with Phase 7's own artifact.
+[fixed_ensemble_weights]
+"1" = { persistence = 0.16, classical_hist_gbm = 0.34, phase5_tcn = 0.50 }
+"4" = { persistence = 0.00, classical_hist_gbm = 0.34, phase5_tcn = 0.66 }
+"96" = { persistence = 0.00, classical_hist_gbm = 0.26, phase5_tcn = 0.74 }

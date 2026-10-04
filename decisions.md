@@ -2330,3 +2330,458 @@ The probe search is therefore shallow, and "the probe was under-parameterised" r
 open possibility - it is not a settled explanation.
 
 **Status:** Accepted, with an explicit known deficiency
+
+# Phase 7 - Heterogeneous energy expert routing (D-091 … D-098)
+
+## D-091 - Phase 7 routes over heterogeneous models; the Qwen-internal MoE is not built
+
+**Context:** this phase's plan, written into `docs/moe_design_requirements.md` after
+Phase 6, was to add sparse expert FFN layers inside `Qwen3-1.7B-Base` with a
+load-balancing loss and capacity factors. The motivation was Phase 6's measurement that
+the frozen backbone's final-layer readout has a participation ratio of **2.1** across 2,048
+dimensions - an almost rank-2 signal - on the reasoning that specialisation would help.
+
+**Evidence:** Phase 6 also measured that Qwen wins **no regime** (§1's tables, measured
+twice), loses to every existing baseline at every horizon, and that pretraining
+nevertheless contributes real signal (33.9% better than a random backbone at h=1). The
+premise being acted on - that the shared trunk's collapse is what is holding the model
+back - was therefore untested, while the measurement that Qwen is fourth in every regime
+was in hand.
+
+**Decision:** build a **heterogeneous Energy Expert Router** over the three models that do
+work: persistence, Phase 4's `classical_hist_gbm`, and Phase 5's `phase5_tcn`. The gate is
+a softmax over their forecasts, not over internal layers.
+
+**Alternatives:**
+
+| Alternative | Why not |
+|---|---|
+| Qwen-internal MoE | The trunk wins no regime and its readout is rank-2. Adding experts inside it would have produced a larger model with a worse starting point, on a machine where Phase 6 already measured a frozen forward pass at 0.248 s/row |
+| One model, the best single expert | The best expert changes with horizon (persistence at h=1, GBM at h=96) and with regime (persistence in low-ramp, GBM in high-ramp). A single choice is a compromise everywhere |
+| Fixed weighted ensemble | A live baseline, not an answer. It captures the average benefit of combining but cannot respond to the state, which is the hypothesis being tested |
+
+**Why:** the phase's own instruction was to determine whether heterogeneous expert
+specialisation is a useful architectural principle, and the only way to find out is to
+route between the specialists that exist. Specialising a backbone that wins nothing would
+have tested a different question.
+
+**Consequences:** the load-balancing loss and capacity-factor requirements of §6.4 and
+§6.5 of the superseded plan do not apply; the router's weights are inspected directly
+instead (capacity is reported as the share of rows each expert is selected for). Qwen
+remains a documented negative result and is revisited only if a new experiment gives a
+reason. Recorded in `docs/expert_router_design.md` §1.
+
+**Status:** Accepted
+
+---
+
+## D-092 - The router is trained on validation rows, not on the experts' training rows
+
+**Context:** the router's label is "which expert would have been most accurate for this
+row". If those expert predictions came from a model that had already fitted the row's own
+target, the expert would look better than it ever will at inference, the label would be
+noise, and nothing in the loss would look wrong.
+
+**Decision:** the learned experts are fitted on the **training** split (Phase 4's grid for
+the GBM, Phase 5's committed checkpoint for the TCN); the router is fitted on a
+chronological **70% of the validation split**, early-stopped on the last 30%, and evaluated
+on **test** exactly once. The fixed-weight and best-single baselines select their parameters
+on the same router-training rows, so no baseline is advantaged by having seen test.
+
+**Measured, not asserted:** `offline/crossfit.py` halves the validation block in time,
+fits one GBM on the first half and computes the oracle gain on rows it did and did not see.
+In-sample labels give 21.57% / 19.31% / 18.39% against 21.12% / 29.80% / 37.49%
+out-of-sample at h=1 / 4 / 96. The direction is not the naive worry: an expert that looks
+better in-sample makes the pool look *more* interchangeable, so the oracle gain **shrinks**.
+Routing labels from in-sample predictions would have understated the available headroom at
+long horizons by roughly half, and a router chasing them would have reported a small honest
+improvement as if it were the whole opportunity.
+
+**Residual limitation, stated:** Phase 5's TCN used the validation split for checkpoint
+selection, so validation rows are not entirely independent of the *experts*. This is
+inherited from Phase 5 and is a much smaller effect than in-sample expert predictions.
+
+**Status:** Accepted
+
+---
+
+## D-093 - Oracle analysis lives in a separate subpackage, enforced by tests
+
+**Context:** the phase requires an offline oracle - the per-row best expert with hindsight -
+as an upper bound, and requires that it never be reachable from production inference. The
+oracle reads the realised target by definition, so a system that routed on it would be
+scoring itself against the answer.
+
+**Decision:** the oracle and every analysis that legitimately reads the target live in
+`ml/router/offline/`. Deployable modules (`experts`, `features`, `model`, `routing`,
+`training`, `ensembles`, `cache`) are one level up and import none of it. Two tests enforce
+the boundary: one parses each deployable module's AST and asserts no import resolves into
+`offline`, `oracle` or `evaluation`; the other asserts no deployable module *names* an
+oracle in code, while allowing prose that explains why it is unreachable.
+
+**Why a subpackage rather than a docstring:** "the oracle is offline-only" written in a
+comment is a promise. Import structure plus an AST test is a check, and a check is what
+keeps the property after the person who wrote it has moved on.
+
+**Status:** Accepted
+
+---
+
+## D-094 - The router is trained as a residual on the state-independent optimum
+
+**Context:** initialised near uniform, an L1 objective through a softmax drives the logits
+apart and the router settles on a single expert within a few epochs. Measured: mean weights
+became (0.000, 0.000, 0.999) at h=4 and (0.000, 0.000, 1.000) at h=96, because the gradient
+through the softmax vanishes as a vertex is approached. At h=1 the collapse was harmless; at
+the longer horizons it cost more than a fixed weighted ensemble achieved, because a hedge
+that reduces absolute error is precisely the solution a vertex cannot express.
+
+**Decision:** train two variants from the same rows and the same protocol - **warm**,
+initialised at the validation-fitted fixed-ensemble weights (head bias `log(w)`, head weights
+zeroed, so epoch 0 *is* that mixture exactly), and **cold**, near uniform. Epoch 0 is scored
+and eligible for selection, so a warm-started router can never regress below its starting
+point on the selection rows. The variant is chosen **per horizon on the selection rows
+only**.
+
+**Why not simply always warm-start:** at h=1 the cold variant is better on the selection
+rows (0.4233 against 0.4316) and the choice is made on validation, not on test.
+
+**Recorded, because it is the phase's central negative result:** the warm-started router
+selected **epoch 0 at every horizon**. Gradient descent found no state-dependent weighting
+that improved on the constant one it started from, at any horizon. A router that returns its
+own initialisation is not a router, and saying so is more useful than tuning until it does
+not.
+
+**Status:** Accepted
+
+---
+
+## D-095 - The verdict is the stricter of two comparisons, and a win needs 0.0001 kW
+
+**Context:** the phase asks whether routing beats "the strongest individual expert", and
+separately requires comparison against a fixed weighted ensemble. Reporting only the first
+would let a router that learned nothing be called a success - which is exactly what an
+earlier iteration of this phase produced, when a warm-started router reproduced the fixed
+ensemble to fourteen decimal places and was scored YES.
+
+**Decision:** report both, and take the verdict from the **stricter** one. A horizon counts
+as beaten only when the router's test MAE is lower by more than **0.0001 kW** - a tenth of a
+watt, far below anything physically meaningful and well above floating-point noise. Two
+methods differing by 2e-6 kW are the same method.
+
+This threshold is not cosmetic. An earlier iteration of this phase produced a router whose
+MAE equalled the fixed ensemble's to fourteen decimal places at h=4, and a strict `less than`
+test called that a win. The horizon is now recorded as a **tie**, which is what it is.
+
+**Result:** versus the best single expert **PARTIALLY, 2 of 3** (wins h=4 by 4.70% and h=96
+by 0.87%; loses h=1 by 0.64%). Versus a fixed weighted ensemble **NO, 0 of 3** (h=4 tied;
+loses h=1 by 2.16% and h=96 by 1.31%). Phase verdict: **PARTIALLY**.
+
+**Consequence:** the phase's conclusion is negative, and says the fixed weighted ensemble is
+the better deployable combiner at every horizon.
+
+**Status:** Accepted
+
+---
+
+## D-096 - The oracle mixture is a bound on fixed weighting, not on the router
+
+**Context:** the phase's analysis initially documented `oracle_mixture` - the best convex
+combination chosen per horizon *in hindsight* - as an upper bound any soft routing cannot
+exceed.
+
+**Evidence:** established on a constructed case and kept as an executable claim. Three
+experts predicting the constants 0, 5 and 10 kW against a series alternating between 0 and 10:
+any fixed combination is itself a constant, so it cannot beat 5 kW of mean error whatever the
+weights are, while choosing the low expert on low rows and the high expert on high rows is
+exact. A *state-dependent* rule can beat the best *constant* rule without seeing the target.
+
+The deployed router happened not to beat it - 0.4069 against 0.3956 kW at h=1 - which is a
+separate finding (§D-098) and not a contradiction. The relationship being corrected is about
+what the quantity bounds, not about how this particular router performed.
+
+**Decision:** the hard oracle remains an upper bound on **hard** routing, because it is a
+per-row selection. `oracle_mixture` bounds **fixed** weighting only, and is the correct
+baseline for the validation-fitted fixed ensemble rather than for the router.
+`test_oracle_mixture_is_not_an_upper_bound_on_a_state_dependent_router` asserts the
+relationship on a constructed case so the docstring cannot drift back.
+
+**Status:** Accepted, correcting an earlier claim of this phase
+
+---
+
+## D-097 - Router features are lagged by exactly h + 1 steps, and the boundary is tested
+
+**Context:** `past_error` - each expert's most recent realised error for the same horizon -
+is the strongest single feature group (removing it costs 0.037 kW at h=1), and the only
+group that is a function of the experts rather than of the demand. It is also where a leak
+would be easiest to write.
+
+**Decision:** at origin `t`, horizon `h`, the feature is
+`|f_e(t - h - 1; h) - y(t - 1)| / rated_kw`. The delay is `h + 1` because the forecast issued
+at `t - h - 1` is the newest one whose outcome is known at `t`. Using the forecast issued at
+`t - 1` would read a target at `t + h - 1`, which has not happened.
+
+**Normalised by rated kW.** A router weighting on raw kW error would learn one policy for a
+1.4 kW household and another for a 388 kW shop, from 40 series.
+
+**Boundary enforcement:** `assert_router_features_are_causal` poisons every value after a
+sampled row's own origin in its series, rebuilds the features of **every row of that series
+up to that origin**, and requires bit-identical output. The realised targets are recomputed
+from the poisoned series rather than passed in, so a look-up reaching past the origin really
+would change. `test_causality_check_actually_catches_a_leaking_builder` injects a
+deliberately leaking builder and asserts the guard fires, because a guard that has never
+rejected anything is not evidence of anything.
+
+**Status:** Accepted
+
+---
+
+## D-098 - A learned, state-dependent router is deployed for h=1 only; the rest gets a fixed ensemble
+
+**Context:** §6.7 of the superseded plan warned that "the low-ramp regime, where
+persistence reaches 0.0034 kW, is the one a router is most likely to damage". It was
+damaged: the router scores 0.0188 kW there against persistence's 0.0051, a factor of **3.7**,
+on 39% of test rows. The router's wins are in the high-demand and high-ramp terciles, where
+73% of total error lives.
+
+**Measurement, on the sealed test split:**
+
+| | h=1 | h=4 | h=96 |
+|---|---|---|---|
+| Router MAE | 0.4069 | 0.7917 | 1.5600 |
+| Best single expert | **0.4043** | 0.8307 | 1.5737 |
+| Fixed weighted ensemble | **0.3983** | **0.7917** | **1.5399** |
+| Oracle | 0.2871 | 0.5217 | 0.9942 |
+
+The router wins the high-ramp tercile (1.0929 against persistence's 1.1970 kW) and loses the
+other five regimes. Selection accuracy is 23-39% against a three-way choice, and the router
+selected persistence **13 times in 179,520 rows**.
+
+**Decision:** the result is recorded as it is. No gate, no regime-conditional policy and no
+low-volatility shortcut was added after seeing it, because each would be fitted on the test
+split. What is recorded instead is the deployment recommendation: use a fixed weighted
+ensemble, and treat volatility-gated routing as the direction for a **pre-registered**
+experiment rather than as a fix derived from these results.
+
+**Consequence:** the phase's principle, as measured rather than as planned:
+
+> Different forecasting experts do have different strengths across energy conditions, and
+> 30-38% of achievable accuracy is available between them. On this data a learned
+> energy-aware router does not capture it: a fixed weighted ensemble is better at every
+> horizon, and the router's advantage over any single expert comes from combining rather
+> than from routing on state.
+
+**Status:** Accepted, negative result recorded
+
+## D-099 - A paired lower/upper bound is one uncertainty quantity, not two
+
+**Context:** Phase 2's `UncertaintyEstimate` counted `lower_bound` and `upper_bound` as two
+separate summaries and refused more than one, on the stated grounds that "how an interval
+relates to a standard deviation depends on a distributional assumption that Phase 8 has not
+yet made". The consequence was that a **prediction interval - the one representation Phase 8
+exists to produce - was the one representation the domain could not hold.** The phase would
+have had to invent a parallel type beside the domain model, which is how a domain stops being
+a domain.
+
+**Decision:** a *paired* interval is one quantity and is accepted. Pairing an interval with a
+scalar summary (`standard_deviation`, `relative_std`) is still refused, because the stated
+reason was about mixing the two and that reason survives untouched. Supplying one bound
+without the other is refused - half a claim is not a claim. Recorded in
+`docs/uncertainty_design.md` §8 and exercised by
+`tests/domain/test_values.py::test_uncertainty_accepts_a_paired_prediction_interval`.
+
+**Consequence:** `ProbabilisticForecast` converts to a Phase 2 `Forecast` with no parallel
+type, and the optional `uncertainty` field that Phase 2 deferred is finally populated.
+
+**Status:** Accepted
+
+## D-100 - Validation is halved for calibration, not reused from the router's 70/30 split
+
+**Context:** Phase 8 needs rows the point forecast did not fit (all of validation) and rows
+the *width scale* did not fit (half of those, at minimum). Phase 7 already split validation
+70/30 to fit and select its router, so reusing that split would put the scale model on rows
+Phase 7's three weights per horizon were fitted on.
+
+**Decision:** validation is halved chronologically - `CAL_FIT` (89,760 rows) fits the scale
+functions and the quantile models, `CAL_CONF` (89,760 rows) supplies the conformity scores
+and the band cut points. `CalibrationSplit` refuses overlapping halves, refuses any
+calibration row inside test, and refuses any calibration row outside validation.
+
+**Consequence:** the scale never depends on the residuals it is asked to normalise, which is
+the structural precondition for the normalised conformal form to preserve its guarantee. The
+overlap with Phase 7's weight fit that remains is not assumed away - it is measured and
+reported (§2 of the design doc): +8.576% at h=1, -0.721% at h=4, -11.025% at h=96.
+
+**Status:** Accepted
+
+## D-101 - The split-parity number is reported even though it is inconvenient, and it predicts the headline negative result
+
+**Context:** The fixed ensemble's own MAE differs by 8.6% (h=1) and 11.0% (h=96) between the
+two halves of validation. Nothing can be done about it: the halves are chronological, demand
+difficulty moves across a year, and the alternative - a random split - would put test-period
+rows into the calibration set.
+
+**Decision:** the gap is a headline number in the result and the summary, not a footnote. The
+alternative - reporting only that "the split was chronological" - would leave the reader with
+no way to judge whether the calibration transferred.
+
+**Consequence:** it turns out to be the explanation for the phase's main negative result. The
+default constant-width interval calibrated on `CAL_CONF` over-covers at h=1 (0.9836 against a
+nominal 0.95) and under-covers at h=96 (0.9071), failing 11 of 12 level-horizon cells, and the
+sign of each failure matches the sign of the gap at that horizon.
+
+**Status:** Accepted, and the measurement earned its place
+
+## D-102 - The conformal guarantee is reported as an empirical measurement, not invoked
+
+**Context:** Split conformal gives `P(y_new in interval) ≥ 1 - α` when conformity scores are
+exchangeable with future scores and the point predictor is fixed before calibration. The first
+condition is load-bearing and it is not met: D-101's own numbers are a demonstration that
+residuals from the two halves of a single validation split are not exchangeable, and across a
+year they are less so.
+
+**Decision:** the finite-sample correction is still computed the correct way
+(`ceil((n+1)(1-α))`-th order statistic, capped at `n`) and the intervals are still called
+conformal, but the string attached to every conformal interval states that coverage here is
+an empirical measurement and that a time-ordered method would be required for a real
+guarantee. `tests/ml/test_uncertainty_leakage.py` asserts that the wording survives.
+
+**Consequence:** no document in this repository may be read as claiming a coverage guarantee
+for the shipped intervals. A time-ordered conformal calibrator is recorded as the direction
+that would earn one.
+
+**Status:** Accepted
+
+## D-103 - The published procedure is selected per horizon from measured calibration, and only among calibrated methods
+
+**Context:** No single interval method was both calibrated and best-scoring at all three
+horizons. At h=1 `quantile_regression` has the best weighted interval score (1.938 against
+`conformal_state`'s 2.156) and covers 0.9164 at a nominal 0.95 - it fails. An earlier version
+of this phase selected on interval score alone and published a method whose own
+`calibration_status` read `FAIL`.
+
+**Decision:** selection is per horizon, at the artifact's band level, among methods whose
+measured coverage is inside the tolerance, by lowest weighted interval score. If nothing is
+calibrated at a horizon, the fallback is published **with its FAIL status and a note saying it
+is a measurement rather than a selection** - never silently narrowed. The batch's `method` is
+one name per horizon for the same reason: a single name would credit a horizon with a method
+that was not chosen for it.
+
+**Consequence:** all three published horizons read `PASS`
+(`conformal_state` at h=1 and h=4, `conformal_dispersion` at h=96). The verdict's
+`is_worth_the_machinery` component compares the best *calibrated* method against the
+baseline, and records the unconstrained winner alongside so the gap is visible.
+
+**Status:** Accepted
+
+## D-104 - Band cut points are per-horizon, and are terciles of the calibration split only
+
+**Context:** The operational LOW/MEDIUM/HIGH band is what a downstream consumer reads. Two
+things could have gone wrong and the first did. Taking terciles of the widths *pooled across
+horizons* - whose means differ by 5x - labelled 61% of h=1 rows "low" and 43% of h=96 rows
+"high", so the band reported the horizon rather than the row. Taking them from the test rows
+would make an operational label a test statistic.
+
+**Decision:** one tercile pair per horizon, computed from that horizon's **conformity** rows.
+`ProbabilisticForecastBatch.band_cuts` requires one ascending pair per horizon and rejects a
+single shared pair.
+
+**Consequence:** the h=1 bands are 59,156 / 57,972 / 62,392, and the h=96 bands are
+74,075 / 44,330 / 61,115 - a real spread, tracking a real width distribution, rather than a
+horizon label.
+
+**Status:** Accepted
+
+## D-105 - The vocabulary is predictive uncertainty, model disagreement and data variability; no decomposition is claimed
+
+**Context:** Two of the six methods are built on "the experts disagree", conventionally called
+epistemic uncertainty, and the residual-based methods are conventionally called aleatoric.
+The prompt's §23 hypothesis is phrased in the first vocabulary and the required output in the
+second.
+
+**Decision:** neither label is used. Separating the two requires assumptions about the
+error-generating process that this data cannot support, and Phase 6 already measured that the
+pretrained representation carries almost no usable structure. Where a method leans on
+disagreement it says so, and `disagreement_is_predictive` in the verdict record is keyed by
+the measure's own name rather than by a decomposition.
+
+**Consequence:** the artifact carries `UncertaintyKind.COMBINED`, and a consumer can refuse an
+epistemic interval where it needed an aleatoric one without the phase having pretended to
+know which it produced.
+
+**Status:** Accepted
+
+## D-106 - Data-quality conditioning is reported as impossible, not simulated
+
+**Context:** The phase's brief asks whether uncertainty rises under missing, derived,
+interpolated or stale inputs. SMART-DS carries no per-timestep quality flags: Phase 3 recorded
+`flags=['ok']` across all 35,040 steps and the `TargetSeries` `DataQuality` is clean for every
+row.
+
+**Decision:** the experiment is recorded as not run, with the reason and the available
+metadata attached. No corruption is injected. Doing so would answer a question about the
+injected corruption rather than about this dataset, and it would produce a number in a
+report that a reader could mistake for a property of SMART-DS.
+
+**Consequence:** for this dataset the equivalent question is answered by the horizon and
+regime breakdowns, where difficulty genuinely varies - width tracks error in every regime at
+every horizon, with width ratios of 4-16x against error ratios of 5-28x. A dataset with real
+missing-data flags is where this experiment belongs.
+
+**Status:** Accepted
+
+## D-107 - Two-sided tails are mandatory; a nominal level is the mass the interval actually covers
+
+**Context:** `quantile_levels` documented that a nominal 90% interval puts 5% below the lower
+bound and 5% above the upper one, and returned `(1 - level, level)`. With those tails a
+"nominal 90%" interval is a central 80% interval, and a nominal 50% interval is the single
+median quantile with zero width. The symmetric methods in the phase are unaffected - they take
+the `1 - α` quantile of `|residual|`, which was already correct - so only quantile regression
+would have been silently mislabelled, and it would have looked like a method that simply
+under-covers.
+
+**Decision:** `quantile_levels` returns `(α/2, 1 - α/2)`. The quantile grid is built from it,
+so every reported tail is fitted exactly; `quantile_for_tail` is strict by default and raises
+on an off-grid tail rather than snapping, because "an interval labelled 90% that is really 89%
+is a miscalibrated interval with a misleading name".
+
+**Consequence:** quantile regression's coverage at a nominal 95% improved from 0.8438 to
+0.9164 at h=1 purely from reporting the level it actually achieves. It still fails, for the
+separate and honest reason in §5 of the design doc.
+
+**Status:** Accepted
+
+## D-108 - Crossing quantiles are counted at the pairs actually used, and reported
+
+**Context:** Independently fitted pinball models cross: a lower quantile is predicted above a
+higher one, which produces a negative-width interval. Two responses were possible - repair
+silently, or count.
+
+**Decision:** apply the standard monotone rearrangement so the interval stays valid, and
+report the count **at the lower/upper pairs the phase actually publishes**. A grid-wide
+count is 34-44% and is meaningless, because it counts adjacent fitted quantiles such as 0.90
+against 0.95 that no reported interval uses.
+
+**Consequence:** the published counts are 172 rows at h=1, 9 at h=4 and 0 at h=96, out of
+359,040 - small enough to be a footnote and large enough to be stated. Quantile regression is
+not published at any horizon, but the count is in the summary rather than buried in a note
+string.
+
+**Status:** Accepted
+
+## D-109 - `ProbabilisticForecast` carries no decision, no confidence score and nothing derived from uncertainty and an objective
+
+**Context:** The phase could have defined an action confidence score - "can I rely on this
+forecast?" - from the interval plus a cost. It is the obvious next thing a reader wants.
+
+**Decision:** the artifact stops at the forecast. `uncertainty_notes` records the calibration
+sample and the band definition; it does not record an action. A decision-assurance layer needs
+an objective, a cost of being wrong, and a measure of the alternatives, and defining a
+confidence formula here would fix it on the evidence of one forecasting experiment.
+
+**Consequence:** a future consumer composes the interval with its own objective. Phase 13's
+decision-assurance layer starts from a measured, calibrated interval rather than from a
+number this phase invented.
+
+**Status:** Accepted

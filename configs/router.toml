@@ -1,0 +1,104 @@
+# Phase 7 experiment: heterogeneous energy expert routing.
+#
+# The task definition is inherited from Phase 5 on purpose - same target, same 40
+# customers, same seed, same horizons, same window, same split fractions - because that
+# is what makes this phase's TEST numbers directly comparable with the Phase 4 and
+# Phase 5 tables. Only the router is decided here. The loader REJECTS a config that
+# moves any of those fields, so "comparable with Phase 5" cannot be lost by accident.
+#
+# NOTE ON TOML ORDER: every bare key after a table header belongs to that table, so
+# all top-level scalars below come before [published_test_mae].
+#
+# Unknown keys are REJECTED (D-007).
+
+# ---------------------------------------------------------------------------
+# Task (inherited from Phase 5; validated, not trusted)
+# ---------------------------------------------------------------------------
+target = "customer_load"
+label = "router-main"
+customer_count = 40
+commercial_fraction = 0.25
+seed = 20260101
+
+# Horizons in native 15-minute steps: 15 min, 1 h, 24 h. The router gets one output head
+# per horizon, because Phase 4 and Phase 5 both measured that the best expert changes
+# with horizon and Phase 5's single_horizon ablation showed the trunk should stay shared.
+horizons = [1, 4, 96]
+
+train_fraction = 0.70
+validation_fraction = 0.15
+
+# Same window as Phase 5, so the panel is the same rows and the TCN checkpoint applies
+# without re-fitting. The router itself only ever sees trailing summaries of this window,
+# never the window itself.
+lookback_steps = 672
+token_stride = 4
+
+# ---------------------------------------------------------------------------
+# Router architecture
+# ---------------------------------------------------------------------------
+# One hidden layer. The router's job is to map ~20 state summaries to three weights per
+# horizon; anything deeper would be extra capacity spent on a mapping that a linear head
+# can already express, and a bigger router would make the compute comparison look better
+# by spending more, not by routing better.
+architecture = "tiny_mlp"
+hidden_sizes = [32]
+dropout = 0.0
+
+# Plain softmax. Above 1.0 the weights flatten toward uniform, which would quietly turn
+# the router into the uniform ensemble it is measured against; below 1.0 it sharpens
+# toward hard selection, which is already reported separately as router_hard.
+temperature = 1.0
+
+# ---------------------------------------------------------------------------
+# Training protocol
+# ---------------------------------------------------------------------------
+epochs = 40
+batch_size = 4096
+
+# The loss is the routed forecast's own absolute error in kW - see
+# docs/expert_router_design.md for why not a classification label.
+learning_rate = 0.01
+weight_decay = 0.0
+
+# Epoch selection on the LAST 30% of the validation split, which the router never fits.
+# The test split is read once, at the end, and never influences anything.
+patience = 6
+min_delta = 0.000001
+max_seconds = 1200.0
+torch_threads = 8
+
+# The router is fitted on the FIRST 70% of validation and early-stopped on the last 30%.
+# Both halves are out-of-sample with respect to the experts, which is what makes the
+# routing labels honest; splitting them chronologically is what stops the epoch being
+# chosen on rows the router memorised.
+router_train_fraction_of_validation = 0.7
+
+# Ablations run at the main budget. They are four small routers and the full budget is
+# a few seconds each, so a reduced budget would save nothing and would weaken the
+# comparison.
+ablation_epochs = 40
+
+run_ablations = true
+run_crossfit = true
+
+# How many test rows get a full JSON routing trace. Every test row's weights are written
+# regardless, as float32 in router_weights.npz; this is the readable version.
+trace_rows = 2000
+
+# Where scripts/phase7_experts.py left the expert forecasts.
+expert_cache = "artifacts/phase7/experts.npz"
+
+# ---------------------------------------------------------------------------
+# Parity reference
+# ---------------------------------------------------------------------------
+# Phase 4 and Phase 5's published test MAE, in kW, from experiments/registry.jsonl and
+# artifacts/phase5/tcn-main/result.json. The Phase 7 experts are refits on the same
+# grid, so these must reproduce. They do not for h=96 by construction: Phase 7 recomputes
+# the Phase 4 feature matrix in float32 while the Phase 4 artifact stored it that way, and
+# HistGradientBoosting's bin edges are sensitive at the float32 epsilon - see
+# docs/expert_router_design.md.
+[published_test_mae]
+persistence = { "1" = 0.40432914773117046, "4" = 0.8896694809763173, "96" = 2.434297449238834 }
+classical_hist_gbm = { "1" = 0.424189145060746, "4" = 0.8578757286071777, "96" = 1.5648216247558594 }
+phase5_tcn = { "1" = 0.4178219764814348, "4" = 0.8306813443000045, "96" = 1.6509822586585494 }

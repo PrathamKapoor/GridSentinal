@@ -69,8 +69,29 @@ desktop.ini
 *.swp
 
 # ---- Secrets ----
-# Never commit credentials. Phase 1 has no secrets, but the rule is recorded now.
+# Never commit credentials. The project requires none at runtime: it reads a local
+# SMART-DS dataset and TOML configuration, and calls no hosted service. These patterns are
+# a guard rail against a future dependency introducing a credential, not a description of
+# the current state.
 .env
 .env.*
 *.pem
 *.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+.netrc
+credentials.json
+service-account.json
+secrets.json
+*credential*.json
+*secret*.json
+
+# ---- Local runtime databases ----
+# The project uses no database. These patterns exist so that adding one cannot silently
+# publish someone's local state.
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3

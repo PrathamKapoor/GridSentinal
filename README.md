@@ -15,19 +15,12 @@ OBSERVE → UNDERSTAND → PREDICT → GENERATE OPTIONS → ATTACK OPTIONS
 
 ---
 
-## Current status: Phase 6 of 20 — QWEN3-1.7B ENERGY SPECIALIZATION
+## Current status: Phase 8 of 20 — CALIBRATED UNCERTAINTY
 
-**Phases 1-5 complete. Phase 6 complete — and its answer is NO.** A pretrained
-Qwen3-1.7B, used as a frozen backbone, is **worse than the classical baseline at every
-horizon** on the real SMART-DS forecasting task. No Energy-MoE, no expert routing, no
-structural modification of Qwen, no optimiser, no digital twin, no agent, no UI exists
-yet, by design.
-
-The negative result is the finding, and it is measured rather than asserted. The
-pretrained representation *does* beat a randomly initialised backbone of identical
-architecture by 33.9% at 15 minutes — so transfer is real — but the state it hands the
-head is nearly rank-2, and 1.7 B parameters of that do not beat 13 lag features and a
-gradient-boosted tree.
+**Phases 1-8 complete.** Phase 6 (Qwen specialization) and Phase 7 (learned expert router)
+both returned **negative results that were recorded rather than engineered around**. Phase 8
+returns **YES**: calibrated prediction intervals around Phase 7's fixed ensemble, at three
+horizons, on the sealed test split.
 
 | Phase | Capability | Status |
 |---|---|---|
@@ -37,8 +30,8 @@ gradient-boosted tree.
 | 4 | ML dataset + naive/classical/neural baselines | **Complete — measured** |
 | 5 | Energy Demand Dynamics Model (temporal) | **Complete — mixed result** |
 | 6 | Qwen3-1.7B domain specialization | **Complete — negative result** |
-| 7 | Energy-MoE | Not started — **Phase 6 evidence argues against Qwen surgery** |
-| 8 | Uncertainty estimation | Container only; method TBD |
+| 7 | Heterogeneous Energy Expert Router (MoE) | **Complete — negative result** |
+| 8 | Calibrated uncertainty / prediction intervals | **Complete — YES, with one negative finding** |
 | 9 | Flexibility modelling | Representation only; **battery dispatch unavailable (G-01)** |
 | 10 | Optimization / decision engine | Not started |
 | 11 | Digital twin | Not started; needs a loss model (G-06) and produced state |
@@ -51,6 +44,91 @@ gradient-boosted tree.
 | 18 | Demo scenarios | Not started |
 | 19 | UI / visualization | Not started |
 | 20 | Hackathon packaging | Not started |
+
+---
+
+## The Phase 8 answer
+
+> Can calibrated, informative uncertainty be produced around the energy demand forecast,
+> and does it identify when the forecast cannot be trusted?
+
+**YES on all three components** — and the most useful finding is the negative one.
+
+The point forecast is Phase 7's fixed ensemble, read back from its own artifact and verified
+against the config before anything is fitted. Its test MAE reproduces Phase 7's to
+**0.0000%**. Calibration uses the first half of the validation split to fit the width scales
+and the second half for the conformity scores; the sealed test split is read once.
+
+| horizon | published procedure | coverage @90% | error | rank corr. with error | top decile carries |
+|---|---|---|---|---|---|
+| h=1 | `conformal_state` | 0.9020 | +0.0020 | +0.709 | 4.61x the mean error |
+| h=4 | `conformal_state` | 0.8973 | -0.0027 | +0.673 | 4.21x |
+| h=96 | `conformal_dispersion` | 0.8934 | -0.0066 | +0.658 | 4.80x |
+
+### The negative finding: the default `±1σ` interval is not calibrated
+
+A constant-width interval — the rule a practitioner reaches for by default — fails **11 of
+12** coverage cells, **in opposite directions at the two ends of the horizon range**: 0.9836
+against a nominal 0.95 at h=1, and 0.9071 at h=96.
+
+The cause was measured before the methods were run. The point forecast's own MAE differs by
+**+8.6% at h=1 and -11.0% at h=96** between the two halves of the validation split. Demand
+difficulty moves across a year, so a width calibrated on one half does not transfer to a
+later period, and the sign of each failure matches the sign of that gap.
+
+### Three more findings
+
+1. **Expert disagreement is real but weak.** Spearman between the pool's spread and realised
+   error is **+0.41 / +0.25 / +0.18** at h=1 / 4 / 96 — positive everywhere, decaying with
+   horizon exactly as one would expect. Dividing the spread by the forecast level to make it
+   "scale-free" makes it **negative** at h=4 and h=96.
+2. **A learned state-conditioned scale is the most informative uncertainty here** and the
+   most miscalibrated at the nominal levels. Highest rank correlation (+0.709), top decile
+   carrying 4.2-4.8x the mean error — and it fails the 50% level at every horizon, because
+   the scale models the conditional *median* of `|residual|` and inherits its optimism.
+3. **Fitting the residual distribution directly is the worst performer.** Pinball-loss
+   quantile regression degrades with horizon (0.9164 / 0.8640 / 0.7159 at a nominal 95%) and
+   is published at no horizon.
+
+### What is not claimed
+
+**No coverage guarantee.** Split conformal's guarantee is conditional on exchangeability, and
+this phase's own split-parity numbers demonstrate that the assumption is violated. Every
+conformal interval carries that caveat in its own metadata. A **time-ordered conformal**
+method is the recorded direction for earning a real one. No aleatoric/epistemic decomposition
+is claimed, coverage is uniform *on average* and not conditional on regime, and no decision
+rule is defined — that belongs to Phase 13.
+
+Full detail, including every coverage cell and the ablation table: `docs/uncertainty_design.md`.
+
+---
+
+## The Phase 7 answer
+
+> Do heterogeneous forecasting experts have different strengths across energy conditions,
+> and can a learned energy-aware router exploit that?
+
+**The premise holds. The router does not.** A fixed weighted ensemble beats the learned
+router at **0 of 3** horizons.
+
+kW MAE on the sealed test split, 179,520 rows, every method scored on the same rows:
+
+| method | h=1 | h=4 | h=96 |
+|---|---|---|---|
+| best single expert | **0.4043** | 0.8307 | 1.5737 |
+| router (soft) | 0.4069 | 0.7917 | 1.5600 |
+| **fixed weighted ensemble** | **0.3983** | **0.7917** | **1.5399** |
+| oracle expert assignment | 0.2871 | 0.5217 | 0.9942 |
+
+The oracle shows 30-38% of achievable gain is present in the pool and the experts disagree on
+59-75% of rows, so the diversity premise is sound; the router captured -2% to 13% of it.
+Warm-started from the state-independent optimum it selected **epoch 0 at every horizon**:
+gradient descent found no state-dependent weighting that beat a constant one. It selected
+persistence 13 times in 179,520 rows and is 9.4x worse than persistence in the low-ramp
+tercile.
+
+No volatility gate or regime-conditional policy was added after seeing this, because each
+would have been fitted on the test split. Full detail: `docs/expert_router_design.md`.
 
 ---
 
@@ -223,8 +301,6 @@ Full analysis: `artifacts/ml/*/reports/` and `docs/ml_data_gap_report.md`.
 
 ---
 
-## The Phase 3 answer---
-
 ## The Phase 3 answer
 
 > Can a real SMART-DS instance be transformed into our `EnergySystem` without
@@ -286,6 +362,35 @@ uv venv --python 3.12
 uv sync --extra dev
 ```
 
+## Data
+
+The project needs the **SMART-DS v1.0** subset (228.5 MiB, 359 files). It is **not
+committed** — it is a third-party dataset with an **UNKNOWN licence** that must be confirmed
+before any redistribution, so it is fetched from the publisher's public bucket instead.
+
+The bucket is **unauthenticated public HTTPS: no account, no API key, no registration.**
+
+```powershell
+# From the repository root. Only this scenario's files are needed (~229 MiB).
+$prefix = "https://oedi-data-lake.s3.amazonaws.com/SMART-DS/v1.0/AUS/P1U/base_timeseries/opendss/p1uhs0_1247/p1uhs0_1247--p1udt12703"
+$dest   = "data/raw/smart_ds/v1.0/2018/AUS/P1U/base_timeseries/opendss/p1uhs0_1247/p1uhs0_1247--p1udt12703"
+
+# Either the AWS CLI against a public bucket:
+aws s3 cp --no-sign-request --recursive `
+  "s3://oedi-data-lake/SMART-DS/v1.0/AUS/P1U/base_timeseries/opendss/p1uhs0_1247/p1uhs0_1247--p1udt12703" `
+  $dest
+
+# Or plain HTTPS, with the User Guide and the file manifest from
+# docs/smart_ds_acquisition.md (341 profiles, 9 feeder .dss, metrics.csv,
+# analysis/Summary_data.csv, solar_data/, placements/, PVSystems.dss, Storage.dss).
+```
+
+`energy-intel data validate` checks what arrived: the manifest records a SHA-256 per file,
+and Phase 3 verified the reconstruction against the dataset's own published figures.
+
+**Tests do not require the dataset.** The suite runs on synthetic fixtures and skips the
+handful of tests that need the real files.
+
 ## Verification
 
 ```powershell
@@ -321,7 +426,24 @@ uv run python -m energy_intelligence ml experiments  # the recorded registry
 # the two PV experiments (see the configs for why they differ)
 uv run python -m energy_intelligence ml --ml-config configs/ml_pv_nowcast.toml run
 uv run python -m energy_intelligence ml --ml-config configs/ml_pv_horizon.toml run
+
+# Phase 7: heterogeneous expert router. `experts` is the expensive step
+# (a GBM fit on 950,400 rows plus a 74k-parameter TCN); everything after it
+# reads the same cached forecasts.
+uv run python -m energy_intelligence router config
+uv run python -m energy_intelligence router experts
+uv run python -m energy_intelligence router run
+uv run python -m energy_intelligence router experiments
+
+# Phase 8: calibrated uncertainty. Reuses Phase 7's cached forecasts and its
+# fixed-ensemble weights; fits no point-forecast model of its own.
+uv run python -m energy_intelligence uncertainty config
+uv run python -m energy_intelligence uncertainty run
+uv run python -m energy_intelligence uncertainty experiments
 ```
+
+`router run` and `uncertainty run` require `artifacts/phase7/experts.npz` and
+`artifacts/phase7/router-main/result.json`, so run `router experts` and `router run` first.
 
 ## Commands
 
@@ -351,12 +473,26 @@ uv run python -m energy_intelligence ml --ml-config configs/ml_pv_horizon.toml r
 | `energy-intel temporal experiments` | The temporal experiment registry |
 | `energy-intel qwen config` | Resolved Qwen experiment configuration |
 | `energy-intel qwen verify` | Verify the base checkpoint against its pinned facts |
-| `energy-intel qwen inspect` | Architecture report and the Phase 7 surgery sites |
+| `energy-intel qwen inspect` | Architecture report and the available surgery sites |
 | `energy-intel qwen probe` | Probe experiments over the cached frozen features |
+| `energy-intel router config` | Phase 7: the resolved router experiment configuration |
+| `energy-intel router experts` | Phase 7: refit the expert pool and cache full-split forecasts |
+| `energy-intel router run` | Phase 7: diversity, oracle, router, ablations, sealed evaluation |
+| `energy-intel router experiments` | Phase 7: the recorded Phase 7 result |
+| `energy-intel uncertainty config` | Phase 8: the resolved uncertainty experiment configuration |
+| `energy-intel uncertainty run` | Phase 8: fit six interval methods, evaluate once on the sealed split |
+| `energy-intel uncertainty experiments` | Phase 8: the recorded Phase 8 result |
 | `energy-intel init-dirs` / `paths` | Directory layout |
 
 Global flags: `--config`, `--log-level`, `--experiment-name`, `--seed`.
-Sub-command flags: `--domain-config` (domain), `--data-config` (data), `--ml-config` (ml), `--out` (artifact directory).
+Sub-command flags: `--domain-config` (domain), `--data-config` (data), `--ml-config` (ml),
+`--router-config` (router), `--uncertainty-config` (uncertainty), `--out` (artifact directory).
+
+**Environment variables.** The project requires **none** for normal use — no API keys, no
+tokens, no database. The single variable that exists is `ENERGY_INTEL_CONFIG`, an optional
+override for the directory the `*.toml` configs are read from; it is not needed for a normal
+checkout. Every experiment is configured by a committed TOML file, and all config loaders
+reject unknown keys so a typo fails fast rather than being silently ignored.
 
 ## Layout
 
@@ -368,8 +504,10 @@ Sub-command flags: `--domain-config` (domain), `--data-config` (data), `--ml-con
 │   │   ├── domain.py       Phase 2 energy-domain configuration
 │   │   ├── loader.py       project root discovery, run-config loading
 │   │   ├── ml.py           Phase 4 experiment shape
+│   │   ├── router.py       Phase 7 experiment shape
+│   │   ├── uncertainty.py  Phase 8 experiment shape
 │   │   └── schema.py       run configuration (Phase 1)
-│   ├── ml/                 Phase 4 ML dataset and baselines
+│   ├── ml/                 Phases 4-8
 │   │   ├── targets.py          which quantities can be forecast, and which cannot
 │   │   ├── features.py         feature catalogue + leakage guard
 │   │   ├── splits.py           chronological splits, no window crosses a boundary
@@ -378,10 +516,15 @@ Sub-command flags: `--domain-config` (domain), `--data-config` (data), `--ml-con
 │   │   ├── metrics.py          generic + energy-specific error measures
 │   │   ├── analysis.py         regime and error analysis
 │   │   ├── baselines/          naive.py, classical.py, neural.py
-│   │   ├── experiment.py       one experiment end to end
+│   │   ├── experiment.py       Phase 4 experiment end to end
 │   │   ├── registry.py         reproducible experiment records
 │   │   ├── runner.py           artifact production
-│   │   └── pipeline.py         config to real data bridge
+│   │   ├── pipeline.py         config to real data bridge
+│   │   ├── router/             Phase 7: experts, features, model, routing,
+│   │   │                        training, ensembles, cached forecasts, offline analysis
+│   │   └── uncertainty/        Phase 8: intervals, scales, conformal calibration,
+│   │                            pinball quantiles, the published artifact,
+│   │                            evaluation, and the offline runner
 │   ├── data/               Phase 3 ingestion
 │   │   ├── manifest.py     checksummed dataset manifest
 │   │   └── smartds/        the only layer that knows SMART-DS
@@ -403,13 +546,16 @@ Sub-command flags: `--domain-config` (domain), `--data-config` (data), `--ml-con
 ├── tests/
 │   ├── data/               Phase 3 tests + fixtures extracted from real data
 │   ├── domain/             Phase 2 domain tests
-│   ├── ml/                 Phase 4 tests (leakage, splits, metrics, baselines)
-│   └── *.py                Phase 1 tests
+│   ├── ml/                 Phases 4-8 tests (leakage, splits, metrics, router, uncertainty)
+│   └── *.py                Phase 1 tests and the strict config loaders
 ├── scripts/extract_fixtures.py   builds test fixtures from the real dataset
-├── configs/{default,domain,data,ml,ml_pv_nowcast,ml_pv_horizon,test}.toml
+├── scripts/phase7_experts.py     the expensive Phase 7 expert pass
+├── configs/{default,domain,data,ml,ml_pv_nowcast,ml_pv_horizon,router,uncertainty,test}.toml
 ├── data/raw/smart_ds/       downloaded SMART-DS subset (git-ignored)
 ├── artifacts/data/         Phase 3 reports (git-ignored)
 ├── artifacts/ml/           Phase 4 datasets and reports (git-ignored)
+├── artifacts/phase7/       expert cache and the router result (git-ignored)
+├── artifacts/phase8/       intervals, bands and the uncertainty result (git-ignored)
 ├── experiments/registry.jsonl   the one committed experiment record
 └── docs/
     ├── architecture.md              target architecture, component boundaries
@@ -418,7 +564,9 @@ Sub-command flags: `--domain-config` (domain), `--data-config` (data), `--ml-con
     ├── smart_ds_acquisition.md      source, version, checksums, reproducibility
     ├── smart_ds_mapping.md          field-by-field mapping with confidence
     ├── gaps_report.md               what SMART-DS does NOT provide (domain view)
-    └── ml_data_gap_report.md        what it does NOT provide (ML view)
+    ├── ml_data_gap_report.md        what it does NOT provide (ML view)
+    ├── expert_router_design.md      Phase 7 design and measured result
+    └── uncertainty_design.md        Phase 8 design and measured result
 ```
 
 Subpackages for later phases (`moe/`, `optimization/`, `simulation/`, `agents/`,
@@ -466,7 +614,7 @@ Dev extras: `pytest`, `pytest-cov`.
 
 | File | Contents |
 |---|---|
-| `decisions.md` | Every decision D-001 … D-090, with alternatives and consequences |
+| `decisions.md` | Every decision D-001 … D-109, with alternatives and consequences |
 | `flow.md` | How the system actually works, by real function and file name |
 | `docs/energy_system_spec.md` | The Phase 2 contract: state, actions, constraints, objectives, time, topology, provenance, quality, uncertainty |
 | `docs/agent_responsibility_matrix.md` | Future agent responsibilities, sourced from two reference repositories |
@@ -475,9 +623,10 @@ Dev extras: `pytest`, `pytest-cov`.
 | `docs/gaps_report.md` | 12 gaps: what SMART-DS does not provide (domain view) |
 | `docs/ml_data_gap_report.md` | 15 gaps: what it does not provide for machine learning |
 | `docs/world_model_requirements.md` | What an action-conditioned world model needs, and why SMART-DS cannot supply it |
-| `docs/qwen_energy_requirements.md` | The bar a Qwen3-1.7B energy model must clear, derived from measured Phase 4/5 results |
 | `docs/qwen_energy_requirements.md` | The pre-registered bar a Qwen energy model must clear (written in Phase 5) |
-| `docs/moe_design_requirements.md` | Rewritten from Phase 6: regime heterogeneity, the observable-gate constraint, the rank-2 representation problem, and which MoE designs the evidence supports |
+| `docs/moe_design_requirements.md` | Rewritten from Phase 6: regime heterogeneity, the observable-gate constraint, the rank-2 representation problem, and which MoE designs the evidence supports. §0 now records that Phase 7 superseded its own plan |
+| `docs/expert_router_design.md` | Phase 7: the heterogeneous Energy Expert Router - experts, gate inputs, leakage protection, the measured result, ablations, failure analysis, and what would be worth trying next |
+| `docs/uncertainty_design.md` | Phase 8: the calibration split, six interval methods, the coverage tolerance, the measured results, the published procedure, and what the phase does not establish |
 | `docs/architecture.md` | Target architecture and component boundaries |
 | `handoff.md` | Current state, what is done and not done, next phase, critical context |
 

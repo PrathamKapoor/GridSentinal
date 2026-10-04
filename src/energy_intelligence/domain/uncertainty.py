@@ -45,13 +45,17 @@ TBD_METHOD = "TBD"
 class UncertaintyEstimate:
     """A quantitative or qualitative statement of uncertainty.
 
-    Exactly one of ``lower_bound`` / ``upper_bound`` / ``standard_deviation`` /
-    ``relative_std`` may be supplied in Phase 2. Supplying more than one is
-    rejected rather than silently ignored, because the relationship between an
-    interval and a standard deviation depends on the distributional assumption
-    that Phase 8 has not yet made. Passing ``None`` for all three with a
-    non-``UNKNOWN`` kind is also rejected: an uncertainty that asserts nothing
-    is not an uncertainty estimate.
+    Exactly one **representation** may be supplied: a prediction interval
+    (``lower_bound`` and ``upper_bound`` together, which is one quantity) **or** a scalar
+    summary (``standard_deviation`` or ``relative_std``). Supplying an interval *and* a
+    scalar is rejected rather than silently accepted, because the relationship between a
+    width and a standard deviation depends on the distributional assumption the interval's
+    method made. Passing ``None`` for all four with a non-``UNKNOWN`` kind is also
+    rejected: an uncertainty that asserts nothing is not an uncertainty estimate.
+
+    Phase 2 additionally forbade the paired interval, which left this container unable to
+    hold the one representation Phase 8 exists to produce. Repaired in Phase 8; see
+    ``decisions.md`` D-099.
 
     Attributes:
         kind: Which source of uncertainty this describes.
@@ -101,11 +105,30 @@ class UncertaintyEstimate:
                 "unquantified"
             )
 
-        if len(supplied) > 1:
+        # A *paired* lower/upper is ONE quantity - a prediction interval - and is allowed.
+        # Phase 2 counted the two bounds separately, which made a prediction interval the
+        # one representation the container could not hold, and Phase 8 exists to produce
+        # one. Mixing an interval with a scalar summary is still refused, because how a
+        # width relates to a standard deviation depends on the distributional assumption
+        # the interval's method made - which is exactly what its `method` names. See
+        # decisions.md D-099.
+        has_interval = self.lower_bound is not None or self.upper_bound is not None
+        has_scalar = (
+            self.standard_deviation is not None or self.relative_std is not None
+        )
+        if has_interval and has_scalar:
             errors.append(
-                f"supply at most one of {supplied}; how an interval relates to a "
-                "standard deviation depends on a distributional assumption that "
-                "Phase 8 has not yet made"
+                "supply either a prediction interval (lower_bound and upper_bound) or a "
+                "scalar summary (standard_deviation or relative_std), not both; how an "
+                "interval relates to a standard deviation depends on the distributional "
+                "assumption the interval's method makes"
+            )
+        if has_interval and len(supplied) == 1:
+            missing = (
+                "upper_bound" if self.lower_bound is not None else "lower_bound"
+            )
+            errors.append(
+                f"an interval needs both bounds; {missing} is missing"
             )
 
         for name in ("lower_bound", "upper_bound", "standard_deviation", "relative_std"):

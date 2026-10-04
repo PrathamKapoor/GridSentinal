@@ -1,6 +1,5 @@
 import SectionHead from "../../components/SectionHead";
 import Reveal from "../../components/anim/Reveal";
-import CountUp from "../../components/anim/CountUp";
 import evidence from "../../data/evidence.json";
 import "./Evidence.css";
 
@@ -22,19 +21,19 @@ const facts = evidence.router_facts as {
 
 const NEGATIVES = [
   {
-    id: "Phase 6",
+    id: "Qwen study",
     title: "Language-model specialization",
-    verdict: "Negative — recorded",
+    verdict: "Negative, recorded",
     body: "A frozen Qwen3-1.7B trunk, adapted with a task head, lost to the classical GBM at every horizon: 2.74 vs 1.56 kW MAE at 24 hours, on identical rows. Pretraining transfers (33.9% better than a random trunk at 15 min) but the readout is nearly rank-2.",
   },
   {
-    id: "Phase 7",
+    id: "Router study",
     title: "Learned expert router",
-    verdict: `Negative — ${facts.horizons_router_beats_fixed_ensemble} of 3 horizons`,
-    body: "The diversity premise held — experts disagree on 59–75% of rows and 30–38% of achievable gain exists — but the learned gate captured −2% to 13% of it and lost to a fixed weighted ensemble everywhere.",
+    verdict: `Negative, ${facts.horizons_router_beats_fixed_ensemble} of 3 horizons`,
+    body: "The diversity premise held (experts disagree on 59–75% of rows and 30–38% of achievable gain exists), but the learned gate captured −2% to 13% of it and lost to a fixed weighted ensemble everywhere.",
   },
   {
-    id: "Phase 5",
+    id: "Temporal study",
     title: "The shipped config is not the best found",
     verdict: "Discipline over metrics",
     body: "A no-cyclic-channels ablation beat the shipped configuration at all three horizons. The channels stayed: dropping them after seeing the test split would be tuning against sealed data (D-077).",
@@ -49,7 +48,7 @@ export default function Evidence() {
           index="06"
           kicker="Evidence"
           title="Every claim has a receipt."
-          lede="Models are evaluated, challenged, and retained only when evidence supports them. The project is comfortable publishing what failed — the failures are the reason the surviving numbers mean something."
+          lede="Models are evaluated, challenged, and retained only when evidence supports them. The project is comfortable publishing what failed; the failures are the reason the surviving numbers mean something."
         />
 
         <Reveal>
@@ -102,7 +101,7 @@ export default function Evidence() {
           </div>
           <p className="table-note">
             The learned router lost to the fixed weighted ensemble at{" "}
-            {facts.horizons_router_beats_fixed_ensemble} of 3 horizons — so the
+            {facts.horizons_router_beats_fixed_ensemble} of 3 horizons, so the
             ensemble ships. The oracle row bounds what a perfect router would
             reach; the gap is the honest size of the remaining routing
             opportunity, not a capability claim.
@@ -133,11 +132,11 @@ export default function Evidence() {
         <Reveal delay={100}>
         <div className="evidence-strip" role="list" aria-label="Process facts">
           <div className="evidence-strip-item" role="listitem">
-            <span className="evidence-strip-value mono"><CountUp value={1235} /></span>
+            <span className="evidence-strip-value mono">1,235</span>
             <span className="evidence-strip-label">tests passing</span>
           </div>
           <div className="evidence-strip-item" role="listitem">
-            <span className="evidence-strip-value mono"><CountUp value={29} /></span>
+            <span className="evidence-strip-value mono">29</span>
             <span className="evidence-strip-label">experiments registered</span>
           </div>
           <div className="evidence-strip-item" role="listitem">

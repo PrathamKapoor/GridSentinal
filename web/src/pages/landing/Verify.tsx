@@ -5,31 +5,31 @@ import "./Verify.css";
 const STEPS = [
   {
     label: "Propose",
-    phase: "Phase 10 · optimizer",
+    phase: "optimizer · in design",
     body: "Convert forecasts, uncertainty, flexibility and constraints into a candidate action.",
     status: "specified",
   },
   {
     label: "Simulate",
-    phase: "Phase 11 · digital twin",
+    phase: "digital twin · in design",
     body: "Run the proposal through an independent twin; compare its outcome with the learned model's prediction.",
     status: "specified",
   },
   {
     label: "Challenge",
-    phase: "Phase 12 · red team",
+    phase: "red team · in design",
     body: "Attack the decision: under what conditions does it become unsafe, ineffective or suboptimal?",
     status: "specified",
   },
   {
     label: "Verify",
-    phase: "Phase 13 · assurance",
-    body: "A gate between proposal and execution — approve or reject, with adaptive autonomy.",
+    phase: "assurance gate · in design",
+    body: "A gate between proposal and execution: approve or reject, with adaptive autonomy.",
     status: "specified",
   },
   {
     label: "Act",
-    phase: "Phase 16 · execution",
+    phase: "execution layer · in design",
     body: "Execute, observe the result, and return the outcome to the system as performance data.",
     status: "specified",
   },
@@ -38,19 +38,19 @@ const STEPS = [
 const DISCIPLINE = [
   {
     title: "The sealed test split is read once",
-    body: "Every phase evaluates on the same 179,520 chronological rows, read at the final evaluation only. No gate, policy or blend was added after seeing a test result — which is why the shipped configurations are not the best the ablations found.",
+    body: "Every study evaluates on the same 179,520 chronological rows, read at the final evaluation only. No gate, policy or blend was added after seeing a test result, which is why the shipped configurations are not the best the ablations found.",
   },
   {
     title: "Success bars are registered before experiments run",
-    body: "The Qwen phase's bar (beat 1.5648 kW at 24 h) was pre-registered in docs/qwen_energy_requirements.md before the phase ran. The model missed; the miss is published.",
+    body: "The Qwen study's bar (beat 1.5648 kW at 24 h) was pre-registered in docs/qwen_energy_requirements.md before the study ran. The model missed; the miss is published.",
   },
   {
     title: "Negative results are verdicts, not embarrassments",
-    body: "Phase 6 (Qwen specialization) and Phase 7 (learned router) both returned negative results that were recorded rather than engineered around. Phase 7's router verdict remains negative in the shipped registry.",
+    body: "The Qwen study and the expert-router study both returned negative results that were recorded rather than engineered around. The router verdict remains negative in the shipped registry.",
   },
   {
     title: "The point forecast is pinned",
-    body: "Phase 8 refuses to run unless the ensemble weights match Phase 7's recorded artifact to 0.0000% — every uncertainty number describes exactly the forecast that was published.",
+    body: "The calibration study refuses to run unless the ensemble weights match the router study's recorded artifact to 0.0000%, so every uncertainty number describes exactly the forecast that was published.",
   },
 ];
 
@@ -62,7 +62,7 @@ export default function Verify() {
           index="05"
           kicker="Verify before act"
           title="An action is not executed because it was proposed."
-          lede="The loop's defining discipline: a candidate action must survive simulation, red-teaming and an assurance gate before it moves anything in the physical system. The machinery is specified — the culture behind it is already running."
+          lede="The loop's defining discipline: a candidate action must survive simulation, red-teaming and an assurance gate before it moves anything in the physical system. The machinery is specified; the culture behind it is already running."
         />
 
         <ol className="verify-steps" aria-label="Decision verification sequence">
@@ -94,7 +94,7 @@ export default function Verify() {
         <Reveal delay={80}>
         <div className="verify-discipline">
           <h3 className="verify-discipline-title">
-            What already runs — the discipline, measured
+            What already runs: the discipline, measured
           </h3>
           <div className="verify-discipline-grid">
             {DISCIPLINE.map((d) => (

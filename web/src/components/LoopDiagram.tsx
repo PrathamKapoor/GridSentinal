@@ -8,7 +8,7 @@ const OPERATIONAL_COUNT = LOOP.filter((s) => s.status === "operational").length;
 /**
  * The intelligence loop: eleven stages on a wrapped rail, each focusable,
  * with a detail panel below. Implemented stages are marked operational;
- * the rest are honestly labelled specified, with the phase that owns them.
+ * the rest are honestly labelled specified, with the layer that owns them.
  */
 export default function LoopDiagram() {
   const [active, setActive] = useState<LoopStage>(
@@ -93,8 +93,8 @@ export default function LoopDiagram() {
             >
               <span className="chip-dot" />
               {active.status === "operational"
-                ? `operational · ${active.phase}`
-                : `specified · ${active.phase}`}
+                ? `operational · ${active.owner}`
+                : `specified · ${active.owner}`}
             </span>
           </div>
           <p className="loop-detail-body">{active.description}</p>
@@ -105,8 +105,8 @@ export default function LoopDiagram() {
         <p className="loop-note source-note">
           {OPERATIONAL_COUNT} of {LOOP.length} stages run today, end to end, on a
           real 2018 feeder dataset. The remaining stages are specified in
-          docs/architecture.md with their owning phase — the loop is the plan the
-          implementation is held to, not a rendering of finished software.
+          docs/architecture.md; the loop is the plan the implementation is held to,
+          not a rendering of finished software.
         </p>
       </Reveal>
     </div>

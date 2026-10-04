@@ -29,15 +29,15 @@ export default function Footer() {
 
           <nav className="footer-col" aria-label="Repository">
             <h3>Repository</h3>
-            <span>README.md — measured results</span>
-            <span>docs/architecture.md — component boundaries</span>
-            <span>decisions.md — D-001 … D-109</span>
-            <span>experiments/registry.jsonl — 29 records</span>
+            <span>README.md: measured results</span>
+            <span>docs/architecture.md: component boundaries</span>
+            <span>decisions.md: D-001 … D-109</span>
+            <span>experiments/registry.jsonl: 29 records</span>
           </nav>
 
           <div className="footer-col">
             <h3>Status</h3>
-            <span>Phases 1–8 of 20 complete</span>
+            <span>4 of 11 loop stages operational</span>
             <span>Console: system status only</span>
             <Link to="/console">Enter console →</Link>
           </div>
@@ -46,7 +46,7 @@ export default function Footer() {
         <div className="footer-bottom">
           <span>
             Research system. No production deployment, no customers, no uptime
-            claims — the evidence is the repository.
+            claims; the evidence is the repository.
           </span>
           <span className="footer-license">
             Proprietary. All rights reserved.

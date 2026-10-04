@@ -943,13 +943,13 @@
       "h96": 2.4343
     },
     {
-      "method": "Gradient boosting (Phase 4)",
+      "method": "Gradient boosting",
       "h1": 0.4242,
       "h4": 0.8576,
       "h96": 1.5737
     },
     {
-      "method": "Temporal TCN (Phase 5)",
+      "method": "Temporal TCN",
       "h1": 0.4178,
       "h4": 0.8307,
       "h96": 1.651

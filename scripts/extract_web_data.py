@@ -122,8 +122,8 @@ def phase7_table() -> list[dict]:
     }
     keep = [
         ("persistence", "Persistence"),
-        ("classical_hist_gbm", "Gradient boosting (Phase 4)"),
-        ("phase5_tcn", "Temporal TCN (Phase 5)"),
+        ("classical_hist_gbm", "Gradient boosting"),
+        ("phase5_tcn", "Temporal TCN"),
         (None, "Best single expert"),
         ("router_soft", "Learned router (soft)"),
         ("fixed_ensemble", "Fixed weighted ensemble"),

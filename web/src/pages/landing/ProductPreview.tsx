@@ -32,10 +32,10 @@ const procedure = (
 ).find((p) => p.horizon === 4)!;
 
 const PIPELINE_STEPS = [
-  ["Propose", "Phase 10 · optimizer", "locked"],
-  ["Simulate", "Phase 11 · digital twin", "locked"],
-  ["Challenge", "Phase 12 · red team", "locked"],
-  ["Verify", "Phase 13 · assurance", "locked"],
+  ["Propose", "optimizer · in design", "locked"],
+  ["Simulate", "digital twin · in design", "locked"],
+  ["Challenge", "red team · in design", "locked"],
+  ["Verify", "assurance gate · in design", "locked"],
 ] as const;
 
 export default function ProductPreview() {
@@ -148,7 +148,7 @@ export default function ProductPreview() {
                     lower: slice.lower_kw,
                     upper: slice.upper_kw,
                   }}
-                  caption={`One-hour-ahead demand forecast for asset ${slice.asset_id}, recorded Phase 8 output`}
+                  caption={`One-hour-ahead demand forecast for asset ${slice.asset_id}, recorded model output`}
                 />
               </div>
             </div>
@@ -190,7 +190,7 @@ export default function ProductPreview() {
                     </div>
                   ))}
                   <p className="pipeline-empty">
-                    No candidate actions yet — the optimizer is not implemented.
+                    No candidate actions yet; the optimizer is not implemented.
                     This is where a verified proposal will appear.
                   </p>
                 </div>
@@ -203,9 +203,9 @@ export default function ProductPreview() {
         <Reveal delay={160}>
           <p className="console-foot source-note">
             Demonstration console, not a live system. The chart is recorded
-            Phase 8 output (conformal_state, sealed test split) on real SMART-DS
-            telemetry; system figures come from Phase 3's verified ingestion.
-            The command center itself is Phase 19 of the roadmap.
+            model output (conformal_state, sealed test split) on real SMART-DS
+            telemetry; system figures come from the verified ingestion report.
+            The full command center is still under construction.
           </p>
         </Reveal>
       </div>

@@ -46,7 +46,7 @@ export default function FinalCta() {
         </Reveal>
         <Reveal delay={230}>
           <p className="final-cta-lede">
-            The console reports the system's real, recorded state — the
+            The console reports the system's real, recorded state: the
             ingested feeder, the fixed ensemble, the calibration results, the
             experiment registry, and everything still on the roadmap. No mock
             data presented as live.

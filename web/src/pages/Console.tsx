@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import Reveal from "../components/anim/Reveal";
-import CountUp from "../components/anim/CountUp";
 import Logo from "../components/Logo";
 import { DATASET_FACTS } from "../data/system";
 import "./Console.css";
@@ -11,7 +10,7 @@ type SubsystemStatus = "operational" | "partial" | "not implemented";
 interface Subsystem {
   name: string;
   status: SubsystemStatus;
-  phase: string;
+  layer: string;
   detail: string;
   facts?: [string, string][];
 }
@@ -20,7 +19,7 @@ const SUBSYSTEMS: Subsystem[] = [
   {
     name: "Data & telemetry",
     status: "operational",
-    phase: "Phase 3",
+    layer: "ingestion",
     detail:
       "SMART-DS v1.0 ingested, normalized and reality-validated. Every file SHA-256 checksummed; balance identities that fail are reported, not adjusted.",
     facts: [
@@ -35,9 +34,9 @@ const SUBSYSTEMS: Subsystem[] = [
   {
     name: "Point forecast",
     status: "operational",
-    phase: "Phases 4–7",
+    layer: "modelling",
     detail:
-      "Fixed weighted ensemble over three heterogeneous experts, chosen because it beat the learned router at all horizons. The point forecast is pinned to Phase 7's artifact and may not be refitted.",
+      "Fixed weighted ensemble over three heterogeneous experts, chosen because it beat the learned router at all horizons. The point forecast is pinned to the recorded ensemble artifact and may not be refitted.",
     facts: [
       ["Ensemble", "persistence + GBM + TCN"],
       ["Test MAE", "0.40 / 0.79 / 1.54 kW"],
@@ -48,7 +47,7 @@ const SUBSYSTEMS: Subsystem[] = [
   {
     name: "Calibrated uncertainty",
     status: "operational",
-    phase: "Phase 8",
+    layer: "calibration",
     detail:
       "Six interval methods fitted and scored once on the sealed split. Coverage within ±0.01 of nominal at every published horizon. No coverage guarantee is claimed.",
     facts: [
@@ -61,45 +60,45 @@ const SUBSYSTEMS: Subsystem[] = [
   {
     name: "Decision engine",
     status: "not implemented",
-    phase: "Phase 10",
+    layer: "optimization",
     detail:
-      "The optimizer that converts forecasts, uncertainty, flexibility and constraints into candidate actions. Nothing here yet — no mock actions are shown.",
+      "The optimizer that converts forecasts, uncertainty, flexibility and constraints into candidate actions. Nothing here yet; no mock actions are shown.",
   },
   {
     name: "Digital twin",
     status: "not implemented",
-    phase: "Phase 11",
+    layer: "simulation",
     detail:
       "Independent simulation of proposed actions. Blocked on a loss model (G-06); per-node power balance must be produced, not read.",
   },
   {
     name: "Red team & assurance",
     status: "not implemented",
-    phase: "Phases 12–13",
+    layer: "verification",
     detail:
-      "Adversarial challenges and the decision-assurance gate. The scoring function is deliberately undefined until the phase that owns it.",
+      "Adversarial challenges and the decision-assurance gate. The scoring function is deliberately undefined until the layer that owns it.",
   },
   {
     name: "Flexibility",
     status: "partial",
-    phase: "Phase 9",
+    layer: "modelling",
     detail:
-      "Representation exists in the domain (FlexibilityEstimate). Battery dispatch is unavailable in the dataset (G-01) — a data blocker, recorded, not simulated.",
+      "Representation exists in the domain (FlexibilityEstimate). Battery dispatch is unavailable in the dataset (G-01), a data blocker that is recorded, not simulated.",
   },
   {
     name: "Energy-aware MLOps",
     status: "not implemented",
-    phase: "Phases 14–15",
+    layer: "lifecycle",
     detail:
       "Drift detection, retraining and deployment gates. The discipline they will automate already runs by hand.",
   },
 ];
 
 const STATS: [string, ReactNode][] = [
-  ["Phase", `8 / 20`],
-  ["Tests passing", <CountUp key="t" value={1235} />],
-  ["Experiments registered", <CountUp key="e" value={29} />],
-  ["Telemetry points", <CountUp key="p" value={35040} />],
+  ["Loop stages live", "4 of 11"],
+  ["Tests passing", "1,235"],
+  ["Experiments registered", "29"],
+  ["Telemetry points", "35,040"],
 ];
 
 function StatusChip({ status }: { status: SubsystemStatus }) {
@@ -142,7 +141,7 @@ export default function Console() {
               <p className="cdesc">
                 This console reports the system's recorded state and nothing
                 else. Subsystems marked <strong>not implemented</strong> have
-                no mock data, no simulated dashboards and no fake numbers —
+                no mock data, no simulated dashboards and no fake numbers;
                 they are listed because the architecture names them, and the
                 console does not pretend otherwise.
               </p>
@@ -175,7 +174,7 @@ export default function Console() {
                   >
                     <div className="crow-name" role="cell">
                       <span className="crow-title">{s.name}</span>
-                      <span className="crow-phase mono">{s.phase}</span>
+                      <span className="crow-phase mono">{s.layer}</span>
                     </div>
                     <div className="crow-status" role="cell">
                       <StatusChip status={s.status} />
@@ -223,13 +222,13 @@ export default function Console() {
 
           <Reveal delay={120}>
             <p className="cnote">
-              The command center — live forecasts, decision pipelines,
-              simulation runs — arrives with Phase 19 of the roadmap.
-              Reproduce everything shown here from the repository:{" "}
+              The command center, with live forecasts, decision pipelines and
+              simulation runs, is still under construction. Reproduce
+              everything shown here from the repository:{" "}
               <code className="mono">
                 energy-intel uncertainty experiments
               </code>{" "}
-              prints the recorded Phase 8 result.
+              prints the recorded calibration result.
             </p>
           </Reveal>
         </div>
@@ -239,7 +238,7 @@ export default function Console() {
         <div className="ccontainer cfoot-inner">
           <span>
             Research system. No production deployment, no customers, no uptime
-            claims — the evidence is the repository.
+            claims; the evidence is the repository.
           </span>
           <span className="cfoot-license mono">
             Proprietary. All rights reserved.

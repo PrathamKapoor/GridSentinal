@@ -18,7 +18,7 @@ const slice = evidence.forecast_slice as ForecastSlice;
 const TICKER = [
   "35,040 telemetry points",
   "1,235 tests passing",
-  "Phases 1–8 of 20 complete",
+  "4 of 11 loop stages live",
   "Sealed test split · read once",
   "29 experiments registered",
   "SMART-DS feeder · 2018",
@@ -65,7 +65,7 @@ export default function Hero() {
         <p className="hero-lede" data-hero-item style={{ "--i": 3 } as React.CSSProperties}>
           GridSentinal observes an energy system, forecasts what happens next,
           and states how confident it is. Proposed actions are attacked,
-          simulated and verified before they execute — evidence, not optimism.
+          simulated and verified before they execute. Evidence, not optimism.
         </p>
 
         <div className="hero-ctas" data-hero-item style={{ "--i": 4 } as React.CSSProperties}>
@@ -81,7 +81,7 @@ export default function Hero() {
         </div>
       </div>
 
-      {/* live signal card - recorded Phase 8 output, rises into view */}
+      {/* live signal card - recorded model output, rises into view */}
       <div className="container hero-card-wrap" data-hero-item style={{ "--i": 5 } as React.CSSProperties}>
         <div className="hero-card" aria-label="Recorded forecast preview">
           <div className="hero-card-head">
@@ -99,12 +99,12 @@ export default function Hero() {
                 lower: slice.lower_kw,
                 upper: slice.upper_kw,
               }}
-              caption="One-hour-ahead demand forecast with calibrated 90 percent interval, recorded Phase 8 output"
+              caption="One-hour-ahead demand forecast with calibrated 90 percent interval, recorded model output"
               height={230}
             />
           </div>
           <p className="hero-card-foot mono">
-            recorded Phase 8 output · conformal_state · SMART-DS 2018 · not a live system
+            recorded model output · conformal_state · SMART-DS 2018 · not a live system
           </p>
         </div>
       </div>

@@ -45,9 +45,9 @@ export default function Nav() {
           </nav>
 
           <div className="nav-right">
-            <span className="chip nav-status" title="Phases 1-8 of 20 complete">
+            <span className="chip nav-status" title="Research system, pre-release">
               <span className="chip-dot" />
-              Phase 8 / 20 · research
+              research system
             </span>
             <Link to="/console" className="btn btn-primary btn-sm nav-cta">
               Enter console

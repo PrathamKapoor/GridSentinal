@@ -45,7 +45,7 @@ export default function Uncertainty() {
         <SectionHead
           index="04"
           kicker="Uncertainty"
-          title="Every forecast carries its own doubt — and says how much."
+          title="Every forecast carries its own doubt, and says how much."
           lede="GridSentinal does not stop at a point prediction. Six interval methods were fitted, calibrated and scored once on a sealed test split; the published procedure reports its own coverage, and the widths move with the difficulty of the day."
         />
 
@@ -92,7 +92,7 @@ export default function Uncertainty() {
             <p className="table-note">
               Coverage within ±0.01 of nominal at every horizon. The widest
               tenth of the intervals carries {h1.top_decile_multiple.toFixed(1)}×
-              the mean error — the system knows which rows to distrust.
+              the mean error; the system knows which rows to distrust.
             </p>
 
             <div className="uncertainty-deciles">
@@ -114,8 +114,8 @@ export default function Uncertainty() {
               </span>
             </div>
             <p className="uncertainty-failure-lede">
-              The constant-width <span className="mono">±1σ</span> interval —
-              the rule a practitioner reaches for without thinking — is not
+              The constant-width <span className="mono">±1σ</span> interval
+              (the rule a practitioner reaches for without thinking) is not
               calibrated on this data:
             </p>
             <div className="table-scroll">
@@ -136,7 +136,7 @@ export default function Uncertainty() {
                       <td className="mono">{(level * 100).toFixed(0)}%</td>
                       {HORIZONS.map((h) => {
                         const cell = cellFor(level, h);
-                        if (!cell) return <td key={h} className="mono num">—</td>;
+                        if (!cell) return <td key={h} className="mono num">·</td>;
                         return (
                           <td
                             key={h}
@@ -157,7 +157,7 @@ export default function Uncertainty() {
             <p className="table-note">
               Constant-width <span className="mono">global_residual</span>{" "}
               coverage, sealed test split. It over-covers at 15 minutes and
-              under-covers at 24 hours, in opposite directions — demand
+              under-covers at 24 hours, in opposite directions: demand
               difficulty moves across the year, and a width calibrated on one
               half does not transfer to the other.
             </p>
@@ -165,7 +165,7 @@ export default function Uncertainty() {
               <p>
                 <strong>Not claimed:</strong> a coverage guarantee. Split
                 conformal's guarantee is conditional on exchangeability, and the
-                phase's own split-parity numbers show that assumption is
+                study's own split-parity numbers show that assumption is
                 violated. Every interval carries that caveat in its metadata;
                 time-ordered conformal is the recorded direction for earning a
                 real one.

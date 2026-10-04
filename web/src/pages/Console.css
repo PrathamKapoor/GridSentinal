@@ -1,0 +1,94 @@
+.console-page {
+  padding-top: 122px;
+  min-height: 100vh;
+  background: var(--bg-1);
+}
+
+.console-header {
+  max-width: 52em;
+  margin-bottom: 52px;
+}
+
+.console-title {
+  margin-top: 16px;
+  font-size: clamp(1.9rem, 3.6vw, 2.6rem);
+  font-weight: 620;
+  letter-spacing: -0.025em;
+  font-variation-settings: "wght" 620;
+}
+
+.console-lede {
+  margin-top: 14px;
+  color: var(--text-2);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.console-header-facts {
+  margin-top: 22px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.console-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.console-card .panel-head {
+  padding: 13px 18px;
+}
+
+.console-card-body {
+  padding: 6px 18px 18px;
+}
+
+.console-card-phase {
+  padding-top: 10px;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.console-card-detail {
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.console-card .kv {
+  margin-top: 12px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.console-note {
+  margin-top: 44px;
+  max-width: 60em;
+}
+
+.console-note code {
+  font-size: 0.78rem;
+  color: var(--accent-bright);
+  background: var(--accent-dim);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
+.console-back {
+  margin: 26px 0 72px;
+}
+
+@media (max-width: 860px) {
+  .console-grid {
+    grid-template-columns: 1fr;
+  }
+  .console-page {
+    padding-top: 108px;
+  }
+}

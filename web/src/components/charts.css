@@ -1,0 +1,150 @@
+/* engineering chart styling, shared by all figures */
+
+.chart {
+  position: relative;
+}
+
+.chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-dayline {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.chart-daylabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  fill: var(--text-3);
+  letter-spacing: 0.04em;
+}
+
+.chart-tick {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--text-3);
+}
+
+.chart-unit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--text-2);
+}
+
+.chart-band {
+  fill: rgba(88, 184, 227, 0.13);
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.chart-crosshair {
+  stroke: var(--text-3);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-dot {
+  fill: var(--accent-bright);
+  stroke: var(--bg-2);
+  stroke-width: 1.5;
+}
+
+.chart-dot--dim {
+  fill: var(--accent);
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 10px;
+  pointer-events: none;
+  background: var(--bg-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  padding: 8px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: var(--shadow-2);
+  min-width: 168px;
+}
+
+.chart-tooltip-time {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-3);
+  letter-spacing: 0.03em;
+}
+
+.chart-tooltip-val {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.chart-tooltip-band {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+/* ---------- decile bars ---------- */
+
+.deciles {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.decile-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 52px;
+  align-items: center;
+  gap: 10px;
+}
+
+.decile-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-3);
+}
+
+.decile-track {
+  height: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.decile-fill {
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.85;
+  border-radius: 1px;
+}
+
+.decile-fill--top {
+  background: var(--warn);
+}
+
+.decile-value {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-2);
+  text-align: right;
+}

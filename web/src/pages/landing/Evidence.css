@@ -1,0 +1,116 @@
+.evidence-table .data-table td:first-child {
+  min-width: 220px;
+}
+
+.evidence-row-ship td {
+  background: var(--accent-dim);
+}
+
+.evidence-row-oracle td {
+  color: var(--text-2);
+  font-style: normal;
+  border-bottom-style: dashed;
+}
+
+.evidence-ship-tag {
+  margin-left: 10px;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-bright);
+  border: 1px solid rgba(88, 184, 227, 0.4);
+  border-radius: 3px;
+  padding: 2px 7px;
+  vertical-align: 1px;
+}
+
+.evidence-negatives {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+
+.evidence-negative .panel-head {
+  border-bottom: 1px solid var(--line);
+}
+
+.evidence-negative-body {
+  padding: 18px 20px 22px;
+}
+
+.evidence-negative-body h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.evidence-negative-body p {
+  margin-top: 9px;
+  color: var(--text-2);
+  font-size: 0.87rem;
+  line-height: 1.65;
+}
+
+.evidence-strip {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-3);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+
+.evidence-strip-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px 24px;
+  border-right: 1px solid var(--line);
+}
+
+.evidence-strip-item:last-child {
+  border-right: none;
+}
+
+.evidence-strip-value {
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+
+.evidence-strip-label {
+  font-size: 0.74rem;
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 960px) {
+  .evidence-negatives {
+    grid-template-columns: 1fr;
+  }
+  .evidence-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .evidence-strip-item:nth-child(2n) {
+    border-right: none;
+  }
+  .evidence-strip-item:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 560px) {
+  .evidence-strip {
+    grid-template-columns: 1fr;
+  }
+  .evidence-strip-item {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .evidence-strip-item:last-child {
+    border-bottom: none;
+  }
+}

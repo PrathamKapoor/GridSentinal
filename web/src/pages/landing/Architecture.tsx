@@ -1,0 +1,121 @@
+import SectionHead from "../../components/SectionHead";
+import "./Architecture.css";
+
+interface ComponentRow {
+  name: string;
+  detail: string;
+  status: "operational" | "partial" | "representation" | "specified";
+  phase: string;
+}
+
+const STACK: ComponentRow[] = [
+  {
+    name: "Physical system",
+    detail: "SMART-DS v1.0 feeder, AUS/P1U 2018 — the modelled reality.",
+    status: "operational",
+    phase: "dataset",
+  },
+  {
+    name: "Telemetry & data quality",
+    detail: "359 files SHA-256'd, normalized to kW, validated against the dataset's own published figures.",
+    status: "operational",
+    phase: "Phase 3",
+  },
+  {
+    name: "Energy system model",
+    detail: "Formal contract: state, assets, topology, constraints, provenance, quality.",
+    status: "operational",
+    phase: "Phase 2",
+  },
+  {
+    name: "Forecasting & regime",
+    detail: "Ensemble of persistence, GBM, temporal TCN — routed by measured regime structure.",
+    status: "operational",
+    phase: "Phases 4–7",
+  },
+  {
+    name: "Uncertainty model",
+    detail: "Conformal calibration around the fixed ensemble; the published procedure.",
+    status: "operational",
+    phase: "Phase 8",
+  },
+  {
+    name: "Flexibility engine",
+    detail: "Battery dispatch is not derivable from the dataset — representation only, blocker recorded.",
+    status: "representation",
+    phase: "Phase 9",
+  },
+  {
+    name: "Optimization",
+    detail: "Forecasts + uncertainty + flexibility + constraints → candidate actions.",
+    status: "specified",
+    phase: "Phase 10",
+  },
+  {
+    name: "Digital twin",
+    detail: "Independent simulation of a proposed action, producing a comparable outcome.",
+    status: "specified",
+    phase: "Phase 11",
+  },
+  {
+    name: "Red team",
+    detail: "Adversarial scenarios probing when a decision becomes unsafe or suboptimal.",
+    status: "specified",
+    phase: "Phase 12",
+  },
+  {
+    name: "Decision assurance",
+    detail: "The gate between proposal and execution. Approve, or reject and re-optimize.",
+    status: "specified",
+    phase: "Phase 13",
+  },
+  {
+    name: "Energy-aware MLOps",
+    detail: "Drift, retraining, evaluation and deployment gates — supervised by agents.",
+    status: "specified",
+    phase: "Phases 14–15",
+  },
+];
+
+const STATUS_CHIP: Record<ComponentRow["status"], string> = {
+  operational: "chip--ok",
+  partial: "chip--warn",
+  representation: "chip--warn",
+  specified: "chip--accent",
+};
+
+export default function Architecture() {
+  return (
+    <section className="section" id="architecture">
+      <div className="container">
+        <SectionHead
+          index="07"
+          kicker="Architecture"
+          title="How the components relate."
+          lede="The target architecture, with each boundary held explicit — and each layer's real status. Nothing is marked operational that has not been run end to end against the sealed test split."
+        />
+
+        <div className="arch" role="list" aria-label="System architecture layers">
+          {STACK.map((c) => (
+            <div className="arch-row" role="listitem" key={c.name}>
+              <span className="arch-node" aria-hidden="true" />
+              <div className="arch-name">
+                <span className="arch-name-text mono">{c.name}</span>
+              </div>
+              <p className="arch-detail">{c.detail}</p>
+              <div className="arch-status">
+                <span className={`chip ${STATUS_CHIP[c.status]}`}>
+                  <span className="chip-dot" />
+                  {c.phase}
+                </span>
+              </div>
+            </div>
+          ))}
+          <div className="arch-loopback mono" aria-hidden="true">
+            ↺ outcomes return to telemetry — the loop closes
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}

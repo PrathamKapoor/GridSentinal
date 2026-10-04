@@ -60,6 +60,13 @@ data/processed/*
 data/external/*
 !data/external/.gitkeep
 
+# ---- Web frontend (landing page + console) ----
+# Dependencies and build outputs are reproducible from web/package.json.
+web/node_modules/
+web/dist/
+# Screenshot captures used for visual review; not part of the deliverable.
+web/shots/
+
 # ---- OS / editor ----
 Thumbs.db
 desktop.ini

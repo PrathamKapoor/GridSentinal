@@ -1,0 +1,53 @@
+.uncertainty-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+
+/* ---------- deciles block ---------- */
+
+.uncertainty-deciles {
+  border-top: 1px solid var(--line);
+  padding: 14px 16px 18px;
+}
+
+.panel-title--gap {
+  margin-bottom: 12px;
+}
+
+/* ---------- failure panel ---------- */
+
+.uncertainty-failure-lede {
+  padding: 14px 16px 4px;
+  color: var(--text-2);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.uncertainty-failure .data-table {
+  margin-top: 8px;
+}
+
+.uncertainty-honesty {
+  border-top: 1px solid var(--line);
+  padding: 16px;
+  background: var(--warn-dim);
+}
+
+.uncertainty-honesty p {
+  color: var(--text-2);
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.uncertainty-honesty strong {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+@media (max-width: 960px) {
+  .uncertainty-grid {
+    grid-template-columns: 1fr;
+  }
+}

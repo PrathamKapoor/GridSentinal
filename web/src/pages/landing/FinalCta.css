@@ -1,0 +1,68 @@
+.final-cta {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background: var(--bg-0);
+  padding-block: 140px;
+}
+
+.final-cta-atmosphere {
+  position: absolute;
+  inset: 0;
+}
+
+.final-cta-fade {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+      90% 120% at 50% 115%,
+      transparent 0%,
+      rgba(5, 7, 10, 0.6) 62%,
+      rgba(5, 7, 10, 0.9) 100%
+    ),
+    linear-gradient(180deg, var(--bg-0) 0%, transparent 26%);
+}
+
+.final-cta-inner {
+  position: relative;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.final-cta-kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.final-cta-title {
+  margin-top: 18px;
+  font-size: clamp(2.1rem, 5vw, 3.4rem);
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  font-variation-settings: "wght" 640;
+}
+
+.final-cta-lede {
+  margin-top: 18px;
+  max-width: 36em;
+  color: var(--text-2);
+  font-size: 1.02rem;
+  line-height: 1.7;
+}
+
+.final-cta-actions {
+  margin-top: 34px;
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+}
+
+.btn-lg {
+  padding: 13px 26px;
+  font-size: 1rem;
+}

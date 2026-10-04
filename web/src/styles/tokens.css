@@ -1,0 +1,53 @@
+/* GridSentinal design tokens.
+   Dark industrial palette: graphite foundation, one signal cyan for energy,
+   green for verified states, amber for uncertainty/warning, red used sparingly
+   for measured failures. */
+
+:root {
+  /* surfaces */
+  --bg-0: #05070a;
+  --bg-1: #090c11;
+  --bg-2: #0e1219;
+  --bg-3: #131826;
+  --bg-4: #181f2e;
+
+  /* hairlines */
+  --line: #1b2230;
+  --line-strong: #2a3444;
+
+  /* text */
+  --text-1: #e9edf3;
+  --text-2: #9ba8b8;
+  --text-3: #637082;
+
+  /* signal colors */
+  --accent: #58b8e3;
+  --accent-bright: #8fd4f2;
+  --accent-ink: #06202c; /* text on accent fills */
+  --accent-dim: rgba(88, 184, 227, 0.13);
+
+  --ok: #4fc08d;
+  --ok-dim: rgba(79, 192, 141, 0.12);
+
+  --warn: #d9a83f;
+  --warn-dim: rgba(217, 168, 63, 0.12);
+
+  --fail: #e0685c;
+  --fail-dim: rgba(224, 104, 92, 0.12);
+
+  /* typography */
+  --font-ui: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono",
+    Menlo, Consolas, monospace;
+
+  /* geometry */
+  --radius-1: 3px;
+  --radius-2: 5px;
+  --radius-3: 8px;
+  --container: 1128px;
+
+  /* elevation (restrained) */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 32px rgba(0, 0, 0, 0.45);
+}

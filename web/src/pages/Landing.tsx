@@ -18,7 +18,7 @@ import FinalCta from "./landing/FinalCta";
  * The landing narrative, in order:
  *   problem -> loop -> experts -> uncertainty -> flexibility ->
  *   self-verification -> research -> evidence -> provenance ->
- *   architecture -> command center preview -> enter
+ *   command center preview -> architecture -> enter
  */
 export default function Landing() {
   return (
@@ -35,8 +35,8 @@ export default function Landing() {
         <Research />
         <Evidence />
         <Provenance />
-        <Architecture />
         <ProductPreview />
+        <Architecture />
         <FinalCta />
       </main>
       <Footer />

@@ -2,7 +2,7 @@
   position: relative;
   overflow: hidden;
   background: var(--bg-0);
-  padding-top: 132px;
+  padding-top: 116px;
 }
 
 .hero-atmosphere {
@@ -135,16 +135,18 @@
 }
 
 .hero-title {
-  margin-top: 30px;
-  font-size: clamp(2.9rem, 8.4vw, 6.9rem);
+  margin-top: 24px;
+  font-size: clamp(2.35rem, 8vw, 6.6rem);
   font-weight: 660;
   letter-spacing: -0.042em;
-  line-height: 1.01;
+  line-height: 1.03;
   font-variation-settings: "wght" 660;
+  text-wrap: balance;
 }
 
 .hero-line {
   display: block;
+  text-wrap: balance;
 }
 
 .hero-line em {
@@ -161,7 +163,8 @@
   letter-spacing: 0.24em;
   text-transform: uppercase;
   color: var(--text-3);
-  max-width: 40em;
+  text-wrap: balance;
+  max-width: min(100%, 54em);
 }
 
 .hero-lede {
@@ -173,7 +176,7 @@
 }
 
 .hero-ctas {
-  margin-top: 38px;
+  margin-top: 32px;
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
@@ -182,7 +185,7 @@
 
 /* metadata rail: four small technical facts, no cards */
 .hero-meta {
-  margin-top: 34px;
+  margin-top: 28px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;

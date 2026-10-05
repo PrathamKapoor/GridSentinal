@@ -56,28 +56,31 @@ export default function Hero() {
 
         <h1 className="hero-title">
           <span className="hero-line" data-hero-item style={{ "--i": 1 } as React.CSSProperties}>
-            Intelligence that doesn&rsquo;t
+            Intelligence that
           </span>
           <span className="hero-line" data-hero-item style={{ "--i": 2 } as React.CSSProperties}>
-            just predict. <em>It verifies.</em>
+            doesn&rsquo;t just predict.
+          </span>
+          <span className="hero-line" data-hero-item style={{ "--i": 3 } as React.CSSProperties}>
+            <em>It verifies.</em>
           </span>
         </h1>
 
         <p
           className="hero-descriptor mono"
           data-hero-item
-          style={{ "--i": 3 } as React.CSSProperties}
+          style={{ "--i": 4 } as React.CSSProperties}
         >
           Energy intelligence system for renewable-integrated grids
         </p>
 
-        <p className="hero-lede" data-hero-item style={{ "--i": 4 } as React.CSSProperties}>
+        <p className="hero-lede" data-hero-item style={{ "--i": 5 } as React.CSSProperties}>
           GridSentinal observes an energy system, forecasts what happens next, and
           states how confident it is. Proposed actions are attacked, simulated and
           verified before they execute. Evidence, not optimism.
         </p>
 
-        <div className="hero-ctas" data-hero-item style={{ "--i": 5 } as React.CSSProperties}>
+        <div className="hero-ctas" data-hero-item style={{ "--i": 6 } as React.CSSProperties}>
           <Link to="/console" className="btn btn-primary">
             Open command center
             <svg className="btn-arrow" width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden="true">
@@ -92,7 +95,7 @@ export default function Hero() {
         <ul
           className="hero-meta"
           data-hero-item
-          style={{ "--i": 6 } as React.CSSProperties}
+          style={{ "--i": 7 } as React.CSSProperties}
           aria-label="System facts"
         >
           {HERO_META.map((m) => (
@@ -104,7 +107,7 @@ export default function Hero() {
       </div>
 
       {/* live signal card - recorded model output, rises into view */}
-      <div className="container hero-card-wrap" data-hero-item style={{ "--i": 7 } as React.CSSProperties}>
+      <div className="container hero-card-wrap" data-hero-item style={{ "--i": 8 } as React.CSSProperties}>
         <div className="hero-card" aria-label="Recorded forecast preview">
           <div className="hero-card-head">
             <span className="hero-card-title mono">DEMAND · 1 H AHEAD · 90% INTERVAL</span>
@@ -132,7 +135,7 @@ export default function Hero() {
       </div>
 
       {/* full-bleed fact ticker */}
-      <div className="hero-ticker" data-hero-item style={{ "--i": 8 } as React.CSSProperties}>
+      <div className="hero-ticker" data-hero-item style={{ "--i": 9 } as React.CSSProperties}>
         <Marquee
           items={TICKER}
           speed={42}

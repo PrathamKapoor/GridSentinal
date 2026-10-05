@@ -34,6 +34,12 @@ export default function Reveal({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // already on screen at mount (anchor jump, deep link, late hydration):
+    // show it rather than waiting for an observer that may never fire.
+    if (el.getBoundingClientRect().top < window.innerHeight) {
+      setInView(true);
+      return;
+    }
     const io = new IntersectionObserver(
       (entries) => {
         if (entries[entries.length - 1]?.isIntersecting) {

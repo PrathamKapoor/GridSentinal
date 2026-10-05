@@ -697,15 +697,35 @@ not trust a stale number, run them.
 
 ## 11. Frontend
 
-The frontend is user-owned and was not modified by Phase 10. It is a Vite + React app:
+A Vite + React app in `web/`, with two routes: `/` for the landing page and
+`/console` for the operator console. Unknown paths fall back to the landing page.
 
 ```powershell
 cd web
 npm install
-npm run dev
+npm run dev        # http://localhost:5173
+npm run build      # tsc --noEmit && vite build
+npm run typecheck  # tsc --noEmit only
 ```
 
-Check `web/package.json` for the exact script names before running.
+There is no lint script; `npm run lint` will fail. Check `web/package.json` for the
+exact script names before running anything.
+
+The landing page runs as twelve numbered sections in reading order: hero, 01
+problem, 02 the intelligence loop, 03 forecast experts, 04 uncertainty, 05
+flexibility, 06 verify before act, 07 research ledger, 08 evidence, 09 provenance
+and integrity, 10 the product, 11 architecture, 12 enter. Every nav link resolves to
+a section that exists on the page; there are no placeholder links.
+
+Figures are read from `web/src/data/landing.ts`, `web/src/data/evidence.json` and
+`web/src/data/system.ts`, which mirror recorded experiment output: 1,356 passing
+tests, 30 registered experiments, decision records to D-130. Rows the backend
+reports as `not implemented` are shown that way, in the console and on the page; no
+mock data is presented as live.
+
+The `Grainient` background is raw WebGL2 with no third-party WebGL dependency. It
+pauses when the tab is hidden, when the hero is offscreen, and when the visitor
+prefers reduced motion.
 
 ## Not available yet
 

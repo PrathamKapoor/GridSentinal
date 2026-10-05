@@ -139,7 +139,8 @@
   z-index: 59;
   border-radius: var(--radius-3);
   border: 1px solid var(--line-strong);
-  background: rgba(2, 12, 7, 0.97);
+  /* opaque: a translucent sheet lets the hero headline read through the menu */
+  background: var(--bg-0);
   padding: 12px 18px 20px;
   box-shadow: var(--shadow-2);
 }
@@ -178,8 +179,10 @@
 }
 
 @media (max-width: 860px) {
+  /* `.chip` in base.css sets display:inline-flex with equal specificity and
+     loads later, so these need the extra `.nav-shell` anchor to win. */
   .nav-links,
-  .nav-status {
+  .nav-shell .nav-status {
     display: none;
   }
   .nav-burger {

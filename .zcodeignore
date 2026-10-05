@@ -1,0 +1,139 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+
+# ---- Packaging / build ----
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- Test / coverage artifacts ----
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# ---- Type checkers / linters (configured in a later phase) ----
+.mypy_cache/
+.ruff_cache/
+
+# ---- uv ----
+.uv/
+
+# ---- Runtime outputs ----
+# Generated logs are run artifacts, not source. Reproduced by `energy-intel`.
+logs/*
+!logs/.gitkeep
+
+# Generated experiment/model artifacts are large binaries.
+# Only .gitkeep files are tracked so the directory conventions exist in git.
+artifacts/*
+!artifacts/.gitkeep
+
+# Research-governance artifacts are small, text-based, and MUST be versioned. A protocol freeze
+# that is not committed governs nothing, and a research table that is not committed cannot be
+# checked against the run that produced it. Large binaries under artifacts/ stay ignored.
+!artifacts/experimental_design/
+!artifacts/research_tables/
+!artifacts/paper_evidence/
+models/*
+!models/.gitkeep
+experiments/*
+!experiments/.gitkeep
+# The cross-experiment registry is small, textual, and the only way to compare runs
+# across machines. Per-run directories stay ignored because they are regenerable
+# from the configuration (decisions.md D-070).
+!experiments/registry.jsonl
+
+# ---- Data ----
+# Phase 3 will define dataset naming rules. Raw/processed/external payloads are
+# never committed; only the directory conventions and their .gitkeep files.
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/external/*
+!data/external/.gitkeep
+
+# ---- Web frontend (landing page + console) ----
+# Dependencies and build outputs are reproducible from web/package.json.
+web/node_modules/
+web/dist/
+# Screenshot captures used for visual review; not part of the deliverable.
+web/shots/
+
+# ---- OS / editor ----
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- Secrets ----
+# Never commit credentials. The project requires none at runtime: it reads a local
+# SMART-DS dataset and TOML configuration, and calls no hosted service. These patterns are
+# a guard rail against a future dependency introducing a credential, not a description of
+# the current state.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+.netrc
+credentials.json
+service-account.json
+secrets.json
+*credential*.json
+*secret*.json
+
+# ---- Local runtime databases ----
+# The project uses no database. These patterns exist so that adding one cannot silently
+# publish someone's local state.
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+node_modules/
+bower_components/
+jspm_packages/
+site-packages/
+coverage/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）
